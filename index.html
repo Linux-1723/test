@@ -1,68 +1,42 @@
 <!DOCTYPE html>
 <html>
-<head>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>JSI Recon</title>
-    <style>
-        body { font-family: monospace; background: #111; color: #0f0; padding: 10px; }
-        textarea { width: 100%; height: 80vh; background: #000; color: #0f0; border: 1px solid #0f0; }
-    </style>
-</head>
-<body>
-    <h3>Scanning for Injected Interfaces...</h3>
-    <textarea id="out"></textarea>
+<head><title>Deep JSI Scan</title></head>
+<body style="background:#000; color:#0f0; font-family:monospace;">
+    <h3>Deep Scanning for Hidden Bridges...</h3>
+    <div id="log"></div>
 
     <script>
-        let out = document.getElementById('out');
-        let foundInterfaces = [];
-        
-        // Step 1: Scan the window object for custom injected objects
-        for (let prop in window) {
-            try {
-                if (typeof window[prop] === 'object' && window[prop] !== null) {
-                    // Filter for likely Facebook/System objects
-                    let p = prop.toLowerCase();
-                    if (p.includes('fb') || p.includes('facebook') || 
-                        p.includes('android') || p.includes('secure') || 
-                        p.includes('helium') || p.includes('messenger')) {
-                        foundInterfaces.push(prop);
-                    }
-                }
-            } catch(e) {
-                // Ignore cross-origin frame errors
-            }
+        function log(msg) { document.getElementById('log').innerHTML += msg + "<br>"; }
+
+        // 1. Check the 'external' object (Common Chromium bridge)
+        if (window.external) {
+            log("[+] window.external found!");
+            for (let m in window.external) log("  - external." + m);
         }
 
-        out.value += "=== FOUND OBJECTS ===\n" + foundInterfaces.join('\n') + "\n\n";
+        // 2. Scan for 'webkit' (Modern Chromium message handlers)
+        if (window.webkit && window.webkit.messageHandlers) {
+            log("[+] window.webkit.messageHandlers found!");
+            for (let h in window.webkit.messageHandlers) log("  - handler: " + h);
+        }
 
-        // Step 2: Brute-force read the methods on those objects
-        foundInterfaces.forEach(iface => {
-            out.value += `--- window.${iface} ---\n`;
-            try {
-                let obj = window[iface];
-                let methods = Object.getOwnPropertyNames(obj);
-                
-                // Sometimes they are hidden in the prototype
-                if (methods.length === 0) {
-                    methods = Object.getOwnPropertyNames(Object.getPrototypeOf(obj));
-                }
-
-                methods.forEach(m => {
-                    if (typeof obj[m] === 'function') {
-                        out.value += `  ${m}()\n`;
-                    } else {
-                        out.value += `  ${m} (Property)\n`;
-                    }
-                });
-            } catch(e) {
-                out.value += `  [Locked/Unreadable]\n`;
+        // 3. Brute-force scan for common Meta internal bridge names
+        const targets = ['_FB_','__fb_bridge','_Messenger','__MessengerBridge','_Helium','__android_js_bridge'];
+        targets.forEach(t => {
+            if (window[t]) {
+                log("[!!!] HIDDEN BRIDGE FOUND: " + t);
+                for (let m in window[t]) log("  - " + t + "." + m);
             }
-            out.value += "\n";
         });
-        
-        if(foundInterfaces.length === 0) {
-            out.value += "No obvious custom interfaces found. They might be hidden behind window.webkit or requires a specific FB domain.";
-        }
+
+        // 4. Check for 'Prompt' hijacking (The "Old School" JNI bridge)
+        // Some bridges hijack window.prompt to send data to C++
+        const start = performance.now();
+        window.prompt("ping");
+        const end = performance.now();
+        if (end - start > 100) log("[!] window.prompt seems hijacked (high latency)");
+
+        log("<br>Scan Complete.");
     </script>
 </body>
 </html>
