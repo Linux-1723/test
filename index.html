@@ -1,94 +1,28 @@
 <!DOCTYPE html>
 <html>
-<head>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>JSI Bridge Enumerator</title>
-    <style>
-        body { background:#000; color:#0f0; font-family:monospace; font-size: 12px; word-wrap: break-word; }
-        .bridge { color: #f0f; font-weight: bold; margin-top: 10px; }
-        .method { color: #fff; margin-left: 15px; }
-    </style>
-</head>
-<body>
-    <h3>Scanning for Injected Native Bridges...</h3>
-    <div id="results">Scanning...<br></div>
+<body style="background:#000; color:#0f0; font-family:monospace;">
+    <h3>Extracting Bridge Methods...</h3>
+    <div id="out"></div>
 
     <script>
-        const resultsEl = document.getElementById('results');
-        
-        function scanBridges() {
-            let output = "";
-            let fbSpecificBridges = [];
-            let unknownObjects = [];
+        const out = document.getElementById('out');
+        const targets = ['android', '_AutofillMessageHandler', '_PromoExtensions', 'navigationPerformanceLoggerJavascriptInterface', 'browserDeclutter'];
 
-            // 1. Get every single property attached to the global window
-            let props = Object.getOwnPropertyNames(window);
-
-            for (let i = 0; i < props.length; i++) {
-                let propName = props[i];
-                
-                // Skip standard browser objects to reduce noise
-                if (propName === 'window' || propName === 'document' || propName === 'location' || propName === 'chrome') continue;
-
-                try {
-                    let val = window[propName];
-                    
-                    // Native Android JavascriptInterfaces show up as objects
-                    if (typeof val === 'object' && val !== null) {
-                        let strRep = String(val);
-                        
-                        // Filter out standard HTML elements, keep potential Java objects
-                        if (!strRep.includes("HTML") && !strRep.includes("Window")) {
-                            
-                            // Flag obvious Facebook/Meta targets
-                            if (propName.toLowerCase().includes('fb') || 
-                                propName.toLowerCase().includes('messenger') ||
-                                propName.toLowerCase().includes('iab')) {
-                                fbSpecificBridges.push(propName);
-                            } else {
-                                unknownObjects.push(propName);
-                            }
-                        }
-                    }
-                    
-                    // Sometimes bridges are injected as direct functions
-                    if (typeof val === 'function' && 
-                       (propName.toLowerCase().includes('fb') || propName.startsWith('_'))) {
-                        fbSpecificBridges.push(propName + " (Function)");
-                    }
-                } catch(e) {
-                    // Security errors often occur when touching restricted native objects!
-                    output += `<span style="color:red">[!] Access Denied to: ${propName}</span><br>`;
+        targets.forEach(t => {
+            try {
+                let obj = window[t];
+                if (obj) {
+                    out.innerHTML += `<br><b>Target: ${t}</b><br>`;
+                    // Enumerate all properties, including non-enumerable Java methods
+                    let methods = Object.getOwnPropertyNames(Object.getPrototypeOf(obj));
+                    methods.forEach(m => {
+                        out.innerHTML += ` - ${m}()<br>`;
+                    });
                 }
+            } catch(e) {
+                out.innerHTML += `<br>Error accessing ${t}: ${e}<br>`;
             }
-
-            output += "<br><b>--- FACEBOOK/IAB BRIDGES ---</b><br>";
-            if (fbSpecificBridges.length === 0) output += "None found.<br>";
-            
-            fbSpecificBridges.forEach(bridgeName => {
-                output += `<div class="bridge">${bridgeName}</div>`;
-                
-                // Attempt to reflect methods off the object
-                try {
-                    let obj = window[bridgeName.replace(" (Function)", "")];
-                    if (typeof obj === 'object') {
-                        for (let method in obj) {
-                            output += `<div class="method">.${method}()</div>`;
-                        }
-                    }
-                } catch(e) {}
-            });
-
-            output += "<br><b>--- OTHER SUSPICIOUS OBJECTS ---</b><br>";
-            unknownObjects.forEach(objName => {
-                output += `<div class="method">${objName}</div>`;
-            });
-
-            resultsEl.innerHTML = output;
-        }
-
-        // Wait a second for Facebook to finish injecting all Java objects, then scan
-        setTimeout(scanBridges, 1500);
+        });
     </script>
 </body>
 </html>
