@@ -40,8 +40,8 @@
             
             // Length of the body (1 + 1 + 1 + 128 = 131 bytes)
             // 0x83 0x01 is the LEB128 representation of 131
-            section.push(0x83); 
-            section.push(0x83);
+            section.push(0x73); 
+            section.push(0x01);
 
             const wasmBuffer = new Uint8Array([...magic, ...section, ...payloadBody]);
 
