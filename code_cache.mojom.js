@@ -15,28 +15,28 @@
   var exports = mojo.internal.exposeNamespace('blink.mojom');
   var persistent_cache$ =
       mojo.internal.exposeNamespace('persistentCache.mojom');
-  if (mojo.config.autoLoadMojomDeps) {
-    mojo.internal.loadMojomIfNecessary(
-        'components/persistent_cache/mojom/persistent_cache.mojom', '../../../../../components/persistent_cache/mojom/persistent_cache.mojom.js');
-  }
-  var big_buffer$ =
-      mojo.internal.exposeNamespace('mojoBase.mojom');
-  if (mojo.config.autoLoadMojomDeps) {
-    mojo.internal.loadMojomIfNecessary(
-        'mojo/public/mojom/base/big_buffer.mojom', '../../../../../mojo/public/mojom/base/big_buffer.mojom.js');
-  }
-  var time$ =
-      mojo.internal.exposeNamespace('mojoBase.mojom');
-  if (mojo.config.autoLoadMojomDeps) {
-    mojo.internal.loadMojomIfNecessary(
-        'mojo/public/mojom/base/time.mojom', '../../../../../mojo/public/mojom/base/time.mojom.js');
-  }
-  var url$ =
-      mojo.internal.exposeNamespace('url.mojom');
-  if (mojo.config.autoLoadMojomDeps) {
-    mojo.internal.loadMojomIfNecessary(
-        'url/mojom/url.mojom', '../../../../../url/mojom/url.mojom.js');
-  }
+  //if (mojo.config.autoLoadMojomDeps) {
+    //mojo.internal.loadMojomIfNecessary(
+        //'components/persistent_cache/mojom/persistent_cache.mojom', '../../../../../components/persistent_cache/mojom/persistent_cache.mojom.js');
+ // }
+ // var big_buffer$ =
+      //mojo.internal.exposeNamespace('mojoBase.mojom');
+ // if (mojo.config.autoLoadMojomDeps) {
+    //mojo.internal.loadMojomIfNecessary(
+       // 'mojo/public/mojom/base/big_buffer.mojom', '../../../../../mojo/public/mojom/base/big_buffer.mojom.js');
+  //}
+  //var time$ =
+     // mojo.internal.exposeNamespace('mojoBase.mojom');
+ // if (mojo.config.autoLoadMojomDeps) {
+   // mojo.internal.loadMojomIfNecessary(
+     //   'mojo/public/mojom/base/time.mojom', '../../../../../mojo/public/mojom/base/time.mojom.js');
+ // }
+ // var url$ =
+     // mojo.internal.exposeNamespace('url.mojom');
+ // if (mojo.config.autoLoadMojomDeps) {
+   // mojo.internal.loadMojomIfNecessary(
+       // 'url/mojom/url.mojom', '../../../../../url/mojom/url.mojom.js');
+//  }
 
 
   var CodeCacheType = {};
