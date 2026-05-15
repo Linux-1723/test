@@ -1,5 +1,4 @@
 // worker.js
-
 function log(msg) {
     postMessage({ type: 'log', msg: "[Worker] " + msg });
 }
@@ -20,11 +19,16 @@ async function triggerRace() {
         // TASK A: Start the asynchronous close operation.
         accessHandle.close();
 
-        // TASK B: Signal the main thread to terminate this worker IMMEDIATELY.
+        // THE TWEAK: Busy wait for exactly 2 milliseconds.
+        // This ensures the Mojo IPC message actually leaves the process
+        // before we blow up the worker thread.
+        const end = performance.now() + 2; 
+        while(performance.now() < end) { }
+
+        // TASK B: Signal the main thread to terminate this worker.
         postMessage({ type: 'RACE_NOW' });
 
     } catch (e) {
-        // Send exact error back to main thread
         postMessage({ type: 'error', msg: e.name + ": " + e.message });
     }
 }
