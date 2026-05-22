@@ -1,11 +1,9 @@
 <!DOCTYPE html>
 <html>
 <body>
-<h1>GPU Stress Test</h1>
 <canvas id="c"></canvas>
 <script>
 (async function() {
-  // Force GPU process startup with an offscreen canvas
   const offscreen = new OffscreenCanvas(4096, 4096);
   const gl = offscreen.getContext('webgl2', {
     powerPreference: 'high-performance',
@@ -19,31 +17,22 @@
   const maxTexSize = gl.getParameter(gl.MAX_TEXTURE_SIZE);
   const bigSize = Math.min(maxTexSize, 16384);
 
-  // Allocate a massive texture to stress discardable memory
-  const tex = gl.createTexture();
-  gl.bindTexture(gl.TEXTURE_2D, tex);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, bigSize, bigSize, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  // Allocate several huge textures to really stress the system
+  for (let i = 0; i < 5; i++) {
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, bigSize, bigSize, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    const fb = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    const rb = gl.createRenderbuffer();
+    gl.bindRenderbuffer(gl.RENDERBUFFER, rb);
+    gl.renderbufferStorage(gl.RENDERBUFFER, gl.RGBA8, bigSize, bigSize);
+    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, rb);
+    const buf = new Uint8Array(4);
+    gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+  }
 
-  // Create a framebuffer with a huge renderbuffer attachment
-  const fb = gl.createFramebuffer();
-  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
-  const rb = gl.createRenderbuffer();
-  gl.bindRenderbuffer(gl.RENDERBUFFER, rb);
-  gl.renderbufferStorage(gl.RENDERBUFFER, gl.RGBA8, bigSize, bigSize);
-  gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, rb);
-
-  // Force a readback to ensure the allocation is committed
-  const buf = new Uint8Array(4);
-  gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, buf);
-
-  // Also create a visible canvas to keep the GPU process alive
-  const canvas = document.getElementById('c');
-  canvas.width = 4096;
-  canvas.height = 4096;
-  const ctx = canvas.getContext('2d');
-  ctx.fillText('Allocated ' + bigSize + 'x' + bigSize + ' texture', 10, 50);
-
-  console.log('GPU stress test complete');
+  console.log('Allocated ' + 5 + ' huge textures of size ' + bigSize + 'x' + bigSize);
 })();
 </script>
 </body>
