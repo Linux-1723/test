@@ -17,9 +17,9 @@
   const maxSize = gl.getParameter(gl.MAX_TEXTURE_SIZE);
   log('MAX_TEXTURE_SIZE = ' + maxSize);
 
-  if (maxSize >= 32768) {
+  if (maxSize >= 65536) {
     // ---- Direct 32‑bit overflow path ----
-    log('Using direct 32768x32768 overflow...');
+    log('Using direct 65536x32768 overflow...');
     const tex = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, tex);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 32768, 32768, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
@@ -31,7 +31,7 @@
     log('Read pixels succeeded – check logcat for crash');
   } else {
     // ---- Indirect pool overflow path ----
-    log('MAX_TEXTURE_SIZE < 32768, using many large textures to wrap total memory...');
+    log('MAX_TEXTURE_SIZE < 65536, using many large textures to wrap total memory...');
     const texSize = maxSize; // use the maximum allowed size
     const bytesPerTex = texSize * texSize * 4;
     log(`Each texture: ${texSize}x${texSize} = ${bytesPerTex} bytes`);
