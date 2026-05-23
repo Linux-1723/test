@@ -1,38 +1,37 @@
 <!DOCTYPE html>
 <html>
 <body>
-<canvas id="c" width="1" height="1"></canvas>
+<pre id="log"></pre>
 <script>
-const gl = document.getElementById('c').getContext('webgl2', {
-  powerPreference: 'high-performance',
-  preserveDrawingBuffer: true
-});
-if (!gl) throw new Error('WebGL2 not supported');
-
-const maxSize = gl.getParameter(gl.MAX_TEXTURE_SIZE);
-// Use a size that is large enough to fill memory quickly but within limits
-const texSize = Math.min(maxSize, 4096); // 64 MB per texture
-
-// Keep the GPU pipeline busy
-function readPixel() {
-  const pixel = new Uint8Array(4);
-  gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
-  requestAnimationFrame(readPixel);
-}
-requestAnimationFrame(readPixel);
-
-// Rapidly allocate and delete huge textures
-function stress() {
-  for (let i = 0; i < 20; i++) {
-    const tex = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, tex);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, texSize, texSize, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-    gl.deleteTexture(tex);
+(async function() {
+  const log = (msg) => { document.getElementById('log').textContent += msg + '\n'; };
+  // Try many different canvas sizes and context creation attributes
+  for (let w = 1; w <= 16384; w *= 2) {
+    for (let h = 1; h <= 16384; h *= 2) {
+      const attributes = [
+        {powerPreference: 'high-performance'},
+        {powerPreference: 'low-power'},
+        {desynchronized: true},
+        {preserveDrawingBuffer: true},
+        {failIfMajorPerformanceCaveat: false},
+        {xrCompatible: true}
+      ];
+      for (const attr of attributes) {
+        try {
+          const canvas = new OffscreenCanvas(w, h);
+          const gl = canvas.getContext('webgl2', attr);
+          if (!gl) continue;
+          gl.clear(gl.COLOR_BUFFER_BIT);
+          gl.flush();
+          log(`Created ${w}x${h} with ${JSON.stringify(attr)}`);
+          // Quick destroy to trigger channel teardown and recreation
+          canvas.width = 0;
+        } catch(e) {}
+      }
+    }
   }
-}
-
-// Run stress every 50ms to overlap with ongoing GPU work
-setInterval(stress, 50);
+  log('All combinations tried – check logcat');
+})();
 </script>
 </body>
 </html>
