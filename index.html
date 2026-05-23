@@ -1,29 +1,38 @@
 <!DOCTYPE html>
 <html>
 <body>
-<pre id="log"></pre>
+<canvas id="c" width="1" height="1"></canvas>
 <script>
-(async function() {
-  const log = (msg) => { document.getElementById('log').textContent += msg + '\n'; };
-  try {
-    // Use dimensions that cause 32‑bit product to wrap to a small value
-    const w = 46341;
-    const h = 46341;
-    const canvas = new OffscreenCanvas(w, h);
-    const gl = canvas.getContext('webgl2', {
-      powerPreference: 'high-performance',
-      failIfMajorPerformanceCaveat: false
-    });
-    if (!gl) return log('WebGL2 not supported');
-    log('Context created with canvas ' + w + 'x' + h);
-    // Force a draw to trigger command buffer submission
-    gl.clear(gl.COLOR_BUFFER_BIT);
-    gl.flush();
-    log('Clear flushed – check logcat for crash');
-  } catch(e) {
-    log('Error: ' + e.message);
+const gl = document.getElementById('c').getContext('webgl2', {
+  powerPreference: 'high-performance',
+  preserveDrawingBuffer: true
+});
+if (!gl) throw new Error('WebGL2 not supported');
+
+const maxSize = gl.getParameter(gl.MAX_TEXTURE_SIZE);
+// Use a size that is large enough to fill memory quickly but within limits
+const texSize = Math.min(maxSize, 4096); // 64 MB per texture
+
+// Keep the GPU pipeline busy
+function readPixel() {
+  const pixel = new Uint8Array(4);
+  gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+  requestAnimationFrame(readPixel);
+}
+requestAnimationFrame(readPixel);
+
+// Rapidly allocate and delete huge textures
+function stress() {
+  for (let i = 0; i < 20; i++) {
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, texSize, texSize, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.deleteTexture(tex);
   }
-})();
+}
+
+// Run stress every 50ms to overlap with ongoing GPU work
+setInterval(stress, 50);
 </script>
 </body>
 </html>
