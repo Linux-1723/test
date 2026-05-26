@@ -3,461 +3,312 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Opener Leak Diagnostic</title>
+  <title>ATO Surface Diagnostic</title>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow:wght@300;600&display=swap');
-
+    @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Syne:wght@400;700;800&display=swap');
     :root {
-      --bg: #0a0c10;
-      --panel: #0f1318;
-      --border: #1e2530;
-      --accent: #00e5ff;
-      --warn: #ff6b35;
-      --ok: #39ff14;
-      --muted: #4a5568;
-      --text: #cdd6f4;
+      --bg:#070910;--panel:#0d0f14;--border:#181d26;
+      --accent:#00e5ff;--warn:#ff4d4d;--caution:#ffaa00;
+      --ok:#00e676;--muted:#3d4a5c;--text:#c9d1e0;--radius:6px;
     }
-
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-
-    body {
-      background: var(--bg);
-      color: var(--text);
-      font-family: 'Barlow', sans-serif;
-      font-weight: 300;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 40px 20px;
-    }
-
-    /* Scanline overlay */
-    body::before {
-      content: '';
-      position: fixed;
-      inset: 0;
-      background: repeating-linear-gradient(
-        0deg,
-        transparent,
-        transparent 2px,
-        rgba(0,0,0,0.07) 2px,
-        rgba(0,0,0,0.07) 4px
-      );
-      pointer-events: none;
-      z-index: 100;
-    }
-
-    header {
-      text-align: center;
-      margin-bottom: 36px;
-    }
-
-    header .label {
-      font-family: 'Share Tech Mono', monospace;
-      font-size: 11px;
-      letter-spacing: 4px;
-      color: var(--accent);
-      text-transform: uppercase;
-      margin-bottom: 8px;
-    }
-
-    header h1 {
-      font-size: 28px;
-      font-weight: 600;
-      color: #fff;
-      letter-spacing: -0.5px;
-    }
-
-    header p {
-      margin-top: 8px;
-      font-size: 13px;
-      color: var(--muted);
-    }
-
-    .grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 16px;
-      width: 100%;
-      max-width: 820px;
-      margin-bottom: 20px;
-    }
-
-    @media (max-width: 600px) { .grid { grid-template-columns: 1fr; } }
-
-    .card {
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 20px;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .card::before {
-      content: '';
-      position: absolute;
-      top: 0; left: 0; right: 0;
-      height: 2px;
-      background: var(--accent);
-      opacity: 0.5;
-    }
-
-    .card.warn::before { background: var(--warn); }
-    .card.ok::before   { background: var(--ok); }
-
-    .card-label {
-      font-family: 'Share Tech Mono', monospace;
-      font-size: 10px;
-      letter-spacing: 3px;
-      text-transform: uppercase;
-      color: var(--muted);
-      margin-bottom: 12px;
-    }
-
-    .card-title {
-      font-size: 13px;
-      font-weight: 600;
-      color: var(--accent);
-      margin-bottom: 6px;
-      font-family: 'Share Tech Mono', monospace;
-    }
-
-    .card.warn .card-title { color: var(--warn); }
-    .card.ok .card-title   { color: var(--ok); }
-
-    .value {
-      font-family: 'Share Tech Mono', monospace;
-      font-size: 12px;
-      word-break: break-all;
-      color: #e2e8f0;
-      background: rgba(0,0,0,0.3);
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      padding: 10px 12px;
-      min-height: 40px;
-      margin-top: 6px;
-    }
-
-    .badge {
-      display: inline-block;
-      font-family: 'Share Tech Mono', monospace;
-      font-size: 10px;
-      padding: 2px 8px;
-      border-radius: 20px;
-      font-weight: 600;
-      letter-spacing: 1px;
-      margin-left: 8px;
-      vertical-align: middle;
-    }
-
-    .badge-leak  { background: rgba(255,107,53,0.2); color: var(--warn); border: 1px solid var(--warn); }
-    .badge-safe  { background: rgba(57,255,20,0.1);  color: var(--ok);   border: 1px solid var(--ok); }
-    .badge-info  { background: rgba(0,229,255,0.1);  color: var(--accent); border: 1px solid var(--accent); }
-
-    /* Full-width cards */
-    .card.full { grid-column: 1 / -1; }
-
-    /* Log console */
-    #log {
-      font-family: 'Share Tech Mono', monospace;
-      font-size: 11.5px;
-      line-height: 1.8;
-      background: rgba(0,0,0,0.4);
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      padding: 12px;
-      max-height: 220px;
-      overflow-y: auto;
-      margin-top: 8px;
-    }
-
-    .log-line { color: var(--muted); }
-    .log-line .ts { color: #2d3748; margin-right: 8px; }
-    .log-line.info   .msg { color: var(--accent); }
-    .log-line.warn   .msg { color: var(--warn); }
-    .log-line.ok     .msg { color: var(--ok); }
-    .log-line.err    .msg { color: #fc8181; }
-
-    /* Summary bar */
-    #summary {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-      padding: 14px 20px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      background: var(--panel);
-      width: 100%;
-      max-width: 820px;
-      margin-bottom: 20px;
-      font-family: 'Share Tech Mono', monospace;
-      font-size: 12px;
-    }
-
-    #summary-icon { font-size: 20px; }
-    #summary-text { flex: 1; color: var(--text); }
-    #summary-verdict { font-weight: 600; }
-
-    /* postMessage listener section */
-    #pm-log {
-      font-family: 'Share Tech Mono', monospace;
-      font-size: 11px;
-      background: rgba(0,0,0,0.4);
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      padding: 10px 12px;
-      max-height: 120px;
-      overflow-y: auto;
-      margin-top: 8px;
-      color: var(--muted);
-    }
-
-    footer {
-      font-size: 11px;
-      color: var(--muted);
-      font-family: 'Share Tech Mono', monospace;
-      letter-spacing: 1px;
-      margin-top: 10px;
-      text-align: center;
-    }
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    body{background:var(--bg);color:var(--text);font-family:'Syne',sans-serif;font-weight:400;min-height:100vh;padding:40px 20px 60px;display:flex;flex-direction:column;align-items:center}
+    body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.06) 2px,rgba(0,0,0,.06) 4px);pointer-events:none;z-index:999}
+    header{text-align:center;margin-bottom:32px;max-width:860px;width:100%}
+    .eyebrow{font-family:'Share Tech Mono',monospace;font-size:10px;letter-spacing:5px;color:var(--accent);text-transform:uppercase;margin-bottom:10px}
+    header h1{font-size:32px;font-weight:800;color:#fff;letter-spacing:-1px;line-height:1.1}
+    header h1 span{color:var(--warn)}
+    header p{margin-top:10px;font-size:13px;color:var(--muted);max-width:560px;margin-inline:auto;line-height:1.6}
+    #summary{width:100%;max-width:860px;display:flex;align-items:center;gap:16px;padding:14px 20px;border-radius:var(--radius);border:1px solid var(--border);background:var(--panel);margin-bottom:22px;font-family:'Share Tech Mono',monospace;font-size:12px;transition:border-color .3s}
+    #sum-icon{font-size:22px}
+    #sum-text{flex:1}
+    #sum-verdict{font-weight:700;font-size:13px}
+    .section-title{width:100%;max-width:860px;font-family:'Share Tech Mono',monospace;font-size:10px;letter-spacing:4px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border);padding-bottom:6px;margin:24px 0 14px}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;width:100%;max-width:860px}
+    @media(max-width:620px){.grid{grid-template-columns:1fr}}
+    .card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:18px;position:relative;overflow:hidden;transition:border-color .3s}
+    .card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--accent);opacity:.4;transition:background .3s,opacity .5s}
+    .card.warn{border-color:rgba(255,77,77,.35)}.card.warn::before{background:var(--warn);opacity:.8}
+    .card.caution{border-color:rgba(255,170,0,.25)}.card.caution::before{background:var(--caution);opacity:.7}
+    .card.ok{border-color:rgba(0,230,118,.18)}.card.ok::before{background:var(--ok);opacity:.6}
+    .card.full{grid-column:1/-1}
+    .card-meta{font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:3px;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
+    .card-title{font-family:'Share Tech Mono',monospace;font-size:12px;color:var(--accent);margin-bottom:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+    .card.warn .card-title{color:var(--warn)}.card.caution .card-title{color:var(--caution)}.card.ok .card-title{color:var(--ok)}
+    .badge{font-family:'Share Tech Mono',monospace;font-size:9px;padding:2px 7px;border-radius:20px;letter-spacing:1px;font-weight:700;white-space:nowrap}
+    .b-leak{background:rgba(255,77,77,.15);color:var(--warn);border:1px solid var(--warn)}
+    .b-caution{background:rgba(255,170,0,.12);color:var(--caution);border:1px solid var(--caution)}
+    .b-safe{background:rgba(0,230,118,.1);color:var(--ok);border:1px solid var(--ok)}
+    .b-info{background:rgba(0,229,255,.08);color:var(--accent);border:1px solid var(--accent)}
+    .b-na{background:rgba(61,74,92,.2);color:var(--muted);border:1px solid var(--muted)}
+    .val{font-family:'Share Tech Mono',monospace;font-size:11px;background:rgba(0,0,0,.35);border:1px solid var(--border);border-radius:4px;padding:9px 11px;min-height:38px;word-break:break-all;white-space:pre-wrap;color:#dde3ef;line-height:1.7}
+    .cookie-table{width:100%;border-collapse:collapse;font-family:'Share Tech Mono',monospace;font-size:11px;margin-top:8px}
+    .cookie-table th{text-align:left;padding:5px 8px;background:rgba(0,0,0,.4);color:var(--muted);font-size:9px;letter-spacing:2px;text-transform:uppercase;border-bottom:1px solid var(--border)}
+    .cookie-table td{padding:6px 8px;border-bottom:1px solid rgba(24,29,38,.6);vertical-align:top;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .cookie-table tr:last-child td{border-bottom:none}
+    .ct-name{color:var(--accent)}.ct-value{color:#e2e8f0;max-width:160px}
+    .ct-flag{color:var(--ok)}.ct-flag.bad{color:var(--warn)}
+    #log{font-family:'Share Tech Mono',monospace;font-size:11px;line-height:1.9;background:rgba(0,0,0,.45);border:1px solid var(--border);border-radius:4px;padding:10px 12px;max-height:240px;overflow-y:auto;margin-top:8px}
+    .ll .ts{color:#252d3a;margin-right:8px}
+    .ll.info .msg{color:var(--accent)}.ll.warn .msg{color:var(--warn)}.ll.caut .msg{color:var(--caution)}.ll.ok .msg{color:var(--ok)}.ll.err .msg{color:#fc8181}
+    #pm-log{font-family:'Share Tech Mono',monospace;font-size:11px;background:rgba(0,0,0,.4);border:1px solid var(--border);border-radius:4px;padding:10px 12px;max-height:130px;overflow-y:auto;margin-top:8px;color:var(--muted);line-height:1.8}
+    footer{font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--muted);letter-spacing:2px;margin-top:32px;text-align:center}
+    .risk-bar-wrap{display:flex;align-items:center;gap:10px;margin-top:6px}
+    .risk-bar-bg{flex:1;height:6px;background:rgba(255,255,255,.06);border-radius:3px;overflow:hidden}
+    .risk-bar-fill{height:100%;border-radius:3px;transition:width 1s ease,background .5s}
+    .risk-label{font-family:'Share Tech Mono',monospace;font-size:11px;min-width:100px;text-align:right}
   </style>
 </head>
 <body>
-
 <header>
-  <div class="label">Security Diagnostic</div>
-  <h1>Opener Leak Inspector</h1>
-  <p>Dumps all cross-document communication vectors from this window context</p>
+  <div class="eyebrow">Security Diagnostic v2</div>
+  <h1>ATO <span>Attack Surface</span> Inspector</h1>
+  <p>Full client-side audit: opener/referrer leaks, OAuth tokens in URL/storage, session cookie flags, CSP posture, SRI, and live postMessage interception.</p>
 </header>
 
-<!-- Summary -->
 <div id="summary">
-  <span id="summary-icon">⏳</span>
-  <span id="summary-text">Running diagnostics…</span>
-  <span id="summary-verdict"></span>
+  <span id="sum-icon">&#x23F3;</span>
+  <div style="flex:1">
+    <div id="sum-text" style="margin-bottom:4px">Running diagnostics&hellip;</div>
+    <div class="risk-bar-wrap">
+      <div class="risk-bar-bg"><div class="risk-bar-fill" id="risk-fill" style="width:0%;background:var(--ok)"></div></div>
+      <div class="risk-label" id="risk-label">&mdash;</div>
+    </div>
+  </div>
+  <span id="sum-verdict"></span>
 </div>
 
+<div class="section-title">A &mdash; Cross-Document Vectors</div>
 <div class="grid">
-
-  <!-- document.referrer -->
-  <div class="card" id="card-referrer">
-    <div class="card-label">01 &mdash; Navigation leak</div>
-    <div class="card-title">document.referrer <span id="badge-referrer" class="badge badge-info">checking</span></div>
-    <div class="value" id="val-referrer">—</div>
-  </div>
-
-  <!-- window.opener -->
-  <div class="card" id="card-opener">
-    <div class="card-label">02 &mdash; Opener reference</div>
-    <div class="card-title">window.opener <span id="badge-opener" class="badge badge-info">checking</span></div>
-    <div class="value" id="val-opener">—</div>
-  </div>
-
-  <!-- window.parent -->
-  <div class="card" id="card-parent">
-    <div class="card-label">03 &mdash; Frame parent</div>
-    <div class="card-title">window.parent !== window <span id="badge-parent" class="badge badge-info">checking</span></div>
-    <div class="value" id="val-parent">—</div>
-  </div>
-
-  <!-- window.top -->
-  <div class="card" id="card-top">
-    <div class="card-label">04 &mdash; Frame top</div>
-    <div class="card-title">window.top !== window <span id="badge-top" class="badge badge-info">checking</span></div>
-    <div class="value" id="val-top">—</div>
-  </div>
-
-  <!-- opener property probe -->
-  <div class="card full" id="card-probe">
-    <div class="card-label">05 &mdash; Opener property probe (if opener exists)</div>
-    <div class="card-title">window.opener.location / origin / name <span id="badge-probe" class="badge badge-info">checking</span></div>
-    <div class="value" id="val-probe">—</div>
-  </div>
-
-  <!-- postMessage listener -->
-  <div class="card full" id="card-pm">
-    <div class="card-label">06 &mdash; Inbound postMessage listener</div>
-    <div class="card-title">window.addEventListener('message') <span id="badge-pm" class="badge badge-info">live</span></div>
-    <div id="pm-log">Waiting for inbound postMessage events…</div>
-  </div>
-
-  <!-- Full console log -->
-  <div class="card full">
-    <div class="card-label">07 &mdash; Diagnostic log</div>
-    <div class="card-title">console output</div>
-    <div id="log"></div>
-  </div>
-
+  <div class="card" id="card-referrer"><div class="card-meta">A-01 &middot; navigation leak</div><div class="card-title">document.referrer <span id="bdg-referrer" class="badge b-info">...</span></div><div class="val" id="v-referrer">&mdash;</div></div>
+  <div class="card" id="card-opener"><div class="card-meta">A-02 &middot; opener reference</div><div class="card-title">window.opener <span id="bdg-opener" class="badge b-info">...</span></div><div class="val" id="v-opener">&mdash;</div></div>
+  <div class="card" id="card-parent"><div class="card-meta">A-03 &middot; frame parent</div><div class="card-title">window.parent !== window <span id="bdg-parent" class="badge b-info">...</span></div><div class="val" id="v-parent">&mdash;</div></div>
+  <div class="card" id="card-top"><div class="card-meta">A-04 &middot; top context</div><div class="card-title">window.top !== window <span id="bdg-top" class="badge b-info">...</span></div><div class="val" id="v-top">&mdash;</div></div>
+  <div class="card full" id="card-probe"><div class="card-meta">A-05 &middot; opener property probe</div><div class="card-title">opener.location / .name / .document.title <span id="bdg-probe" class="badge b-info">...</span></div><div class="val" id="v-probe">&mdash;</div></div>
 </div>
 
-<footer>opener-leak-diagnostic &mdash; all checks run client-side &mdash; no data transmitted</footer>
+<div class="section-title">B &mdash; Cookie &amp; Session Audit</div>
+<div class="grid">
+  <div class="card full" id="card-cookies">
+    <div class="card-meta">B-01 &middot; document.cookie &mdash; JS-readable cookies (HttpOnly=false means these are visible)</div>
+    <div class="card-title">Cookie inventory &amp; flag analysis <span id="bdg-cookies" class="badge b-info">...</span></div>
+    <table class="cookie-table" id="cookie-tbl"><thead><tr><th>Name</th><th>Value (truncated)</th><th>HttpOnly</th><th>Risk signals</th></tr></thead><tbody id="cookie-tbody"></tbody></table>
+  </div>
+</div>
+
+<div class="section-title">C &mdash; OAuth &amp; Token Storage Leak</div>
+<div class="grid">
+  <div class="card" id="card-ls"><div class="card-meta">C-01 &middot; localStorage</div><div class="card-title">Token / secret keys <span id="bdg-ls" class="badge b-info">...</span></div><div class="val" id="v-ls">&mdash;</div></div>
+  <div class="card" id="card-ss"><div class="card-meta">C-02 &middot; sessionStorage</div><div class="card-title">Token / secret keys <span id="bdg-ss" class="badge b-info">...</span></div><div class="val" id="v-ss">&mdash;</div></div>
+  <div class="card full" id="card-hash"><div class="card-meta">C-03 &middot; URL hash &amp; query &mdash; OAuth implicit flow token leak</div><div class="card-title">location.hash / search for access_token, id_token, code &hellip; <span id="bdg-hash" class="badge b-info">...</span></div><div class="val" id="v-hash">&mdash;</div></div>
+</div>
+
+<div class="section-title">D &mdash; Security Header Posture (JS-visible signals)</div>
+<div class="grid">
+  <div class="card" id="card-csp"><div class="card-meta">D-01 &middot; CSP meta tag</div><div class="card-title">Content-Security-Policy (meta) <span id="bdg-csp" class="badge b-info">...</span></div><div class="val" id="v-csp">&mdash;</div></div>
+  <div class="card" id="card-xfo"><div class="card-meta">D-02 &middot; framing check</div><div class="card-title">Frame ancestors / framing posture <span id="bdg-xfo" class="badge b-info">...</span></div><div class="val" id="v-xfo">&mdash;</div></div>
+  <div class="card" id="card-https"><div class="card-meta">D-03 &middot; transport security</div><div class="card-title">Protocol &amp; Secure context <span id="bdg-https" class="badge b-info">...</span></div><div class="val" id="v-https">&mdash;</div></div>
+  <div class="card" id="card-sri"><div class="card-meta">D-04 &middot; SRI check</div><div class="card-title">External scripts without integrity attr <span id="bdg-sri" class="badge b-info">...</span></div><div class="val" id="v-sri">&mdash;</div></div>
+</div>
+
+<div class="section-title">E &mdash; Live Event Interception</div>
+<div class="grid">
+  <div class="card full" id="card-pm"><div class="card-meta">E-01 &middot; postMessage listener &mdash; live</div><div class="card-title">window.addEventListener('message') <span id="bdg-pm" class="badge b-info">live</span></div><div id="pm-log">Listening&hellip; any inbound postMessage appears here in real time.</div></div>
+  <div class="card full" id="card-storage-evt"><div class="card-meta">E-02 &middot; storage event &mdash; cross-tab localStorage writes</div><div class="card-title">window.addEventListener('storage') <span id="bdg-storage-evt" class="badge b-info">live</span></div><div class="val" id="v-storage-evt">Listening for cross-tab storage writes&hellip;</div></div>
+</div>
+
+<div class="section-title">F &mdash; Diagnostic Log</div>
+<div class="grid">
+  <div class="card full"><div class="card-meta">F-01 &middot; full output</div><div class="card-title">All checks &mdash; real-time</div><div id="log"></div></div>
+</div>
+
+<footer>ato-surface-diagnostic &mdash; 100% client-side &mdash; no data leaves this page</footer>
 
 <script>
-  /* ── Helpers ─────────────────────────────────────────── */
-  const $ = id => document.getElementById(id);
+const $=id=>document.getElementById(id);
+const ts=()=>new Date().toISOString().split('T')[1].replace('Z','');
+const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+let warnCount=0,cautionCount=0;
 
-  const ts = () => new Date().toISOString().split('T')[1].replace('Z','');
+function addLog(msg,level='info'){
+  const d=document.createElement('div');
+  d.className='ll '+level;
+  d.innerHTML='<span class="ts">['+ts()+']</span><span class="msg">'+esc(msg)+'</span>';
+  $('log').appendChild(d);
+  $('log').scrollTop=$('log').scrollHeight;
+  console[level==='warn'||level==='err'?'warn':'log']('[ato-diag] '+msg);
+  if(level==='warn')warnCount++;
+  if(level==='caut')cautionCount++;
+}
+function setCard(id,status){const c=$('card-'+id);c.classList.remove('ok','warn','caution');if(status)c.classList.add(status)}
+function setBadge(id,label,cls){const b=$('bdg-'+id);b.textContent=label;b.className='badge '+cls}
 
-  function addLog(msg, level = 'info') {
-    const line = document.createElement('div');
-    line.className = `log-line ${level}`;
-    line.innerHTML = `<span class="ts">[${ts()}]</span><span class="msg">${msg}</span>`;
-    $('log').appendChild(line);
-    $('log').scrollTop = $('log').scrollHeight;
-    // Mirror to real console
-    const fn = level === 'warn' ? 'warn' : level === 'err' ? 'error' : 'log';
-    console[fn](`[opener-diag] ${msg}`);
+const TOKEN_PAT=[/access[_-]?token/i,/id[_-]?token/i,/refresh[_-]?token/i,/auth[_-]?token/i,/bearer/i,/\bjwt\b/i,/session[_-]?id/i,/csrf[_-]?token/i,/oauth/i,/api[_-]?key/i,/\bsecret\b/i,/credential/i,/authorization/i,/_token$/i,/token$/i];
+const SESS_PAT=[/sess(ion)?/i,/\bauth\b/i,/token/i,/\bjwt\b/i,/access/i,/refresh/i,/csrf/i,/oauth/i,/remember/i,/user[_-]?id/i,/\buid\b/i,/identity/i];
+const looksToken=(k,v)=>TOKEN_PAT.some(p=>p.test(k+' '+(v||'')));
+const looksSession=n=>SESS_PAT.some(p=>p.test(n));
+
+/* A */
+addLog('-- SECTION A: Cross-document --','info');
+const referrer=document.referrer;
+$('v-referrer').textContent=referrer||'(empty -- no referrer exposed)';
+if(referrer){setBadge('referrer','LEAKED','b-leak');setCard('referrer','warn');addLog('A-01 LEAK -- document.referrer = "'+referrer+'"','warn');}
+else{setBadge('referrer','SAFE','b-safe');setCard('referrer','ok');addLog('A-01 SAFE -- document.referrer empty.','ok');}
+
+const opener=window.opener;
+$('v-opener').textContent=opener?'[object Window] -- opener reference live':'(null)';
+if(opener){setBadge('opener','LEAKED','b-leak');setCard('opener','warn');addLog('A-02 LEAK -- window.opener set. Tab missing rel=noopener.','warn');}
+else{setBadge('opener','SAFE','b-safe');setCard('opener','ok');addLog('A-02 SAFE -- window.opener is null.','ok');}
+
+const inFrame=window.parent!==window;
+$('v-parent').textContent=inFrame?'true -- embedded in iframe':'false -- not framed';
+if(inFrame){setBadge('parent','FRAMED','b-leak');setCard('parent','warn');addLog('A-03 LEAK -- page inside iframe.','warn');}
+else{setBadge('parent','SAFE','b-safe');setCard('parent','ok');addLog('A-03 SAFE -- not framed.','ok');}
+
+const notTop=window.top!==window;
+$('v-top').textContent=notTop?'true -- not top-level context':'false -- top-level context';
+if(notTop){setBadge('top','NESTED','b-leak');setCard('top','warn');addLog('A-04 LEAK -- nested browsing context.','warn');}
+else{setBadge('top','SAFE','b-safe');setCard('top','ok');addLog('A-04 SAFE -- window.top === window.','ok');}
+
+if(opener){
+  const rows=[];
+  [['opener.location.href',()=>opener.location.href],['opener.location.origin',()=>opener.location.origin],['opener.name',()=>opener.name],['opener.document.title',()=>opener.document.title]].forEach(([k,fn])=>{
+    try{const v=fn();rows.push(k+' = '+v);addLog('A-05 READABLE -- '+k+' = "'+v+'"','warn');}
+    catch(e){rows.push(k+' -> blocked ('+e.name+')');addLog('A-05 blocked -- '+k+' ('+e.name+')','ok');}
+  });
+  $('v-probe').textContent=rows.join('\n');setBadge('probe','ran','b-info');setCard('probe','warn');
+}else{
+  $('v-probe').textContent='Skipped -- window.opener is null.';setBadge('probe','N/A','b-na');setCard('probe','ok');addLog('A-05 -- no opener.','info');
+}
+
+/* B */
+addLog('-- SECTION B: Cookie audit --','info');
+(function(){
+  const raw=document.cookie;
+  const tbody=$('cookie-tbody');
+  if(!raw.trim()){
+    const r=document.createElement('tr');
+    r.innerHTML='<td colspan="4" style="color:var(--ok);padding:8px">No JS-readable cookies (all HttpOnly or none set). Good.</td>';
+    tbody.appendChild(r);
+    setBadge('cookies','NONE VISIBLE','b-safe');setCard('cookies','ok');
+    addLog('B-01 SAFE -- No JS-readable cookies.','ok');return;
   }
+  const cookies=raw.split(';').map(c=>{const[n,...r]=c.trim().split('=');return{name:n.trim(),value:r.join('=').trim()};});
+  let leakCount=0;
+  cookies.forEach(({name,value})=>{
+    const sens=looksSession(name);
+    const isJwt=/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(value);
+    const shortV=value.length>40?value.slice(0,40)+'...':value;
+    const tr=document.createElement('tr');
+    tr.innerHTML='<td class="ct-name">'+esc(name)+'</td>'
+      +'<td class="ct-value" title="'+esc(value)+'">'+esc(shortV)+'</td>'
+      +'<td class="ct-flag bad">&#10007; Missing</td>'
+      +'<td>'+(sens?'<span class="ct-flag bad">&#9888; auth-pattern name</span>':'-')+(isJwt?' <span class="ct-flag bad">JWT value</span>':'')+'</td>';
+    tbody.appendChild(tr);
+    if(sens||isJwt){leakCount++;addLog('B-01 RISK -- Cookie "'+name+'" is JS-readable'+(isJwt?' and contains a JWT.':'.'),'warn');}
+    else{addLog('B-01 NOTE -- Cookie "'+name+'" visible via JS (no HttpOnly). Len:'+value.length,'caut');}
+  });
+  if(leakCount>0){setBadge('cookies',leakCount+' RISKY','b-leak');setCard('cookies','warn');}
+  else if(cookies.length>0){setBadge('cookies',cookies.length+' visible','b-caution');setCard('cookies','caution');}
+  else{setBadge('cookies','CLEAN','b-safe');setCard('cookies','ok');}
+})();
 
-  function setCard(cardId, status /* 'ok'|'warn'|'neutral' */) {
-    const card = $(`card-${cardId}`);
-    card.classList.remove('ok','warn');
-    if (status !== 'neutral') card.classList.add(status);
-  }
-
-  function setBadge(badgeId, label, cls) {
-    const b = $(badgeId);
-    b.textContent = label;
-    b.className = `badge ${cls}`;
-  }
-
-  /* ── 01 document.referrer ────────────────────────────── */
-  addLog('Probing document.referrer…');
-  const referrer = document.referrer;
-  $('val-referrer').textContent = referrer || '(empty string — no referrer)';
-
-  if (referrer) {
-    setBadge('badge-referrer', 'LEAKED', 'badge-leak');
-    setCard('referrer', 'warn');
-    addLog(`document.referrer = "${referrer}"`, 'warn');
-  } else {
-    setBadge('badge-referrer', 'SAFE', 'badge-safe');
-    setCard('referrer', 'ok');
-    addLog('document.referrer is empty — no referrer leak.', 'ok');
-  }
-
-  /* ── 02 window.opener ────────────────────────────────── */
-  addLog('Probing window.opener…');
-  const opener = window.opener;
-  $('val-opener').textContent = opener
-    ? '[object Window] — opener reference present'
-    : '(null — no opener)';
-
-  if (opener) {
-    setBadge('badge-opener', 'LEAKED', 'badge-leak');
-    setCard('opener', 'warn');
-    addLog('window.opener is NOT null — tab was opened via window.open() and retains a back-reference.', 'warn');
-  } else {
-    setBadge('badge-opener', 'SAFE', 'badge-safe');
-    setCard('opener', 'ok');
-    addLog('window.opener is null — no opener reference.', 'ok');
-  }
-
-  /* ── 03 window.parent ────────────────────────────────── */
-  addLog('Probing window.parent…');
-  const inFrame = window.parent !== window;
-  $('val-parent').textContent = inFrame
-    ? 'true — page is embedded inside an <iframe>'
-    : 'false — not inside an iframe';
-
-  if (inFrame) {
-    setBadge('badge-parent', 'FRAMED', 'badge-leak');
-    setCard('parent', 'warn');
-    addLog('window.parent !== window — this page is running inside a frame!', 'warn');
-  } else {
-    setBadge('badge-parent', 'SAFE', 'badge-safe');
-    setCard('parent', 'ok');
-    addLog('window.parent === window — not framed.', 'ok');
-  }
-
-  /* ── 04 window.top ───────────────────────────────────── */
-  addLog('Probing window.top…');
-  const notTop = window.top !== window;
-  $('val-top').textContent = notTop
-    ? 'true — not the top-level browsing context'
-    : 'false — this IS the top-level context';
-
-  if (notTop) {
-    setBadge('badge-top', 'NESTED', 'badge-leak');
-    setCard('top', 'warn');
-    addLog('window.top !== window — nested inside another window/frame.', 'warn');
-  } else {
-    setBadge('badge-top', 'SAFE', 'badge-safe');
-    setCard('top', 'ok');
-    addLog('window.top === window — top-level context confirmed.', 'ok');
-  }
-
-  /* ── 05 Opener property probe ────────────────────────── */
-  addLog('Attempting opener property probe…');
-  if (opener) {
-    const probeResults = [];
-    const props = {
-      'opener.location.href':   () => opener.location.href,
-      'opener.location.origin': () => opener.location.origin,
-      'opener.name':            () => opener.name,
-      'opener.document.title':  () => opener.document.title,
-    };
-
-    for (const [key, fn] of Object.entries(props)) {
-      try {
-        const v = fn();
-        probeResults.push(`${key} = ${v}`);
-        addLog(`${key} = "${v}"`, 'warn');
-      } catch(e) {
-        probeResults.push(`${key} → blocked by same-origin policy (${e.name})`);
-        addLog(`${key} → ${e.name} (cross-origin — blocked)`, 'ok');
+/* C */
+addLog('-- SECTION C: OAuth / token storage --','info');
+function scanStorage(store,label,valId,badgeId,cardId){
+  const hits=[];
+  try{
+    for(let i=0;i<store.length;i++){
+      const key=store.key(i);const val=store.getItem(key);
+      if(looksToken(key,val)){
+        const sv=val&&val.length>60?val.slice(0,60)+'...':val;
+        hits.push(key+' = '+sv);
+        addLog(label+' RISK -- key "'+key+'" looks like auth token/secret.','warn');
       }
     }
+    if(hits.length){$(valId).textContent=hits.join('\n');setBadge(badgeId,hits.length+' SECRET'+(hits.length>1?'S':''),'b-leak');setCard(cardId,'warn');}
+    else if(store.length===0){$(valId).textContent='(empty)';setBadge(badgeId,'EMPTY','b-safe');setCard(cardId,'ok');addLog(label+' -- storage empty.','ok');}
+    else{$(valId).textContent=store.length+' key(s) present -- no token patterns.';setBadge(badgeId,'CLEAN','b-safe');setCard(cardId,'ok');addLog(label+' -- '+store.length+' keys, no auth patterns.','ok');}
+  }catch(e){$(valId).textContent='Access error: '+e.message;setBadge(badgeId,'ERROR','b-na');setCard(cardId,'caution');addLog(label+' -- error: '+e.message,'err');}
+}
+scanStorage(localStorage,'C-01 localStorage','v-ls','ls','ls');
+scanStorage(sessionStorage,'C-02 sessionStorage','v-ss','ss','ss');
 
-    $('val-probe').textContent = probeResults.join('\n');
-    setBadge('badge-probe', 'ran', 'badge-info');
-    setCard('probe', 'warn');
-  } else {
-    $('val-probe').textContent = 'Skipped — window.opener is null.';
-    setBadge('badge-probe', 'N/A', 'badge-safe');
-    setCard('probe', 'ok');
-    addLog('Opener probe skipped — no opener present.', 'info');
-  }
-
-  /* ── 06 postMessage listener ─────────────────────────── */
-  addLog('Installing postMessage listener…');
-  window.addEventListener('message', e => {
-    const entry = document.createElement('div');
-    const safe = str => str.replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    entry.innerHTML =
-      `<span style="color:var(--warn)">[${ts()}] ⚠ inbound message</span><br>` +
-      `  origin: <span style="color:var(--accent)">${safe(e.origin)}</span><br>` +
-      `  source: <span style="color:var(--accent)">${e.source === window.opener ? 'window.opener' : e.source === window.parent ? 'window.parent' : 'other'}</span><br>` +
-      `  data:   <span style="color:#e2e8f0">${safe(JSON.stringify(e.data))}</span>`;
-    $('pm-log').innerHTML = '';
-    $('pm-log').appendChild(entry);
-    addLog(`postMessage received from origin "${e.origin}" — data: ${JSON.stringify(e.data)}`, 'warn');
+(function(){
+  const combined=location.hash+location.search;
+  const tokenParams=['access_token','id_token','code','token','refresh_token','oauth_token','state'];
+  const found=[];
+  tokenParams.forEach(p=>{
+    const m=combined.match(new RegExp('[?&#]'+p+'=([^&]*)','i'));
+    if(m){found.push(p+' = '+m[1].slice(0,40)+(m[1].length>40?'...':''));addLog('C-03 CRITICAL -- "'+p+'" in URL! OAuth token exposed in browser history.','warn');}
   });
+  if(found.length){$('v-hash').textContent=found.join('\n');setBadge('hash',found.length+' TOKEN PARAM'+(found.length>1?'S':''),'b-leak');setCard('hash','warn');}
+  else{$('v-hash').textContent='hash: "'+(location.hash||'(empty)')+'"\nsearch: "'+(location.search||'(empty)')+'"\nNo OAuth token parameters detected.';setBadge('hash','SAFE','b-safe');setCard('hash','ok');addLog('C-03 SAFE -- No OAuth tokens in URL.','ok');}
+})();
 
-  /* ── Summary ─────────────────────────────────────────── */
-  const leaks = [
-    referrer !== '',
-    opener !== null,
-    inFrame,
-    notTop,
-  ].filter(Boolean).length;
+/* D */
+addLog('-- SECTION D: Header posture --','info');
+(function(){
+  const metas=document.querySelectorAll('meta[http-equiv="Content-Security-Policy"]');
+  if(metas.length){const c=metas[0].getAttribute('content')||'';$('v-csp').textContent=c;setBadge('csp','PRESENT (meta)','b-caution');setCard('csp','caution');addLog('D-01 NOTE -- CSP meta tag present. Prefer HTTP header.','caut');}
+  else{$('v-csp').textContent='No CSP meta tag found.\nNote: HTTP-level CSP header cannot be read by JS.\nVerify in DevTools > Network > Response Headers.';setBadge('csp','NOT IN META','b-caution');setCard('csp','caution');addLog('D-01 NOTE -- No CSP meta tag. Verify via DevTools Network tab.','caut');}
+})();
 
-  const icon    = leaks > 0 ? '⚠️' : '✅';
-  const text    = leaks > 0
-    ? `${leaks} cross-document vector${leaks>1?'s':''} detected. Review WARN entries above.`
-    : 'No opener / referrer / frame leaks detected in this context.';
-  const verdict = leaks > 0 ? 'REVIEW REQUIRED' : 'ALL CLEAR';
-  const vcolor  = leaks > 0 ? 'var(--warn)' : 'var(--ok)';
+(function(){
+  const framed=window.self!==window.top;
+  $('v-xfo').textContent=framed?'Page IS currently framed.\nX-Frame-Options or CSP frame-ancestors may be missing.':'Not currently framed.\nCannot confirm X-Frame-Options from JS -- check Network headers.';
+  if(framed){setBadge('xfo','FRAMED -- RISK','b-leak');setCard('xfo','warn');addLog('D-02 RISK -- Page running inside a frame.','warn');}
+  else{setBadge('xfo','NOT FRAMED','b-safe');setCard('xfo','ok');addLog('D-02 -- Not framed at load time.','ok');}
+})();
 
-  $('summary-icon').textContent = icon;
-  $('summary-text').textContent = text;
-  $('summary-verdict').textContent = verdict;
-  $('summary-verdict').style.color = vcolor;
-  $('summary').style.borderColor = leaks > 0 ? 'rgba(255,107,53,0.4)' : 'rgba(57,255,20,0.25)';
+(function(){
+  const proto=location.protocol;const secure=window.isSecureContext;
+  $('v-https').textContent='Protocol: '+proto+'\nisSecureContext: '+secure+'\nOrigin: '+location.origin;
+  if(proto!=='https:'||!secure){setBadge('https','INSECURE','b-leak');setCard('https','warn');addLog('D-03 RISK -- Not HTTPS or not secure context. Cookies without Secure flag can leak over HTTP.','warn');}
+  else{setBadge('https','SECURE','b-safe');setCard('https','ok');addLog('D-03 SAFE -- HTTPS + secure context confirmed.','ok');}
+})();
 
-  addLog(`Diagnostics complete — ${leaks} leak vector(s) found.`, leaks > 0 ? 'warn' : 'ok');
+(function(){
+  const ext=Array.from(document.querySelectorAll('script[src]')).filter(s=>{try{return new URL(s.src).origin!==location.origin;}catch(e){return false;}});
+  const miss=ext.filter(s=>!s.integrity);
+  if(miss.length){$('v-sri').textContent=miss.length+' external script(s) without integrity:\n'+miss.map(s=>s.src.split('?')[0]).join('\n');setBadge('sri',miss.length+' MISSING','b-leak');setCard('sri','warn');addLog('D-04 RISK -- '+miss.length+' external script(s) lack SRI. Supply-chain attack could steal tokens.','warn');}
+  else if(ext.length===0){$('v-sri').textContent='No external scripts on this page.';setBadge('sri','CLEAN','b-safe');setCard('sri','ok');addLog('D-04 SAFE -- No external scripts.','ok');}
+  else{$('v-sri').textContent='All '+ext.length+' external script(s) have SRI integrity attribute.';setBadge('sri','ALL PROTECTED','b-safe');setCard('sri','ok');addLog('D-04 SAFE -- All external scripts have SRI.','ok');}
+})();
+
+/* E */
+addLog('-- SECTION E: Live listeners --','info');
+window.addEventListener('message',e=>{
+  const div=document.createElement('div');
+  div.style.cssText='margin-bottom:6px;line-height:1.7';
+  div.innerHTML='<span style="color:var(--warn)">['+ts()+'] postMessage received</span><br>'
+    +'  origin: <span style="color:var(--accent)">'+esc(e.origin)+'</span><br>'
+    +'  source: <span style="color:var(--accent)">'+(e.source===window.opener?'window.opener':e.source===window.parent?'window.parent':'other')+'</span><br>'
+    +'  data:   <span style="color:#e2e8f0">'+esc(JSON.stringify(e.data)).slice(0,200)+'</span>';
+  $('pm-log').innerHTML='';$('pm-log').appendChild(div);
+  setBadge('pm','MESSAGE RECEIVED','b-leak');
+  addLog('E-01 postMessage -- origin:"'+e.origin+'" data:'+JSON.stringify(e.data).slice(0,80),'warn');
+});
+window.addEventListener('storage',e=>{
+  const msg='['+ts()+'] Cross-tab storage write:\n  key: '+e.key+'\n  old: '+(e.oldValue||'').slice(0,60)+'\n  new: '+(e.newValue||'').slice(0,60)+'\n  url: '+e.url;
+  $('v-storage-evt').textContent=msg;
+  if(looksToken(e.key||'',e.newValue||'')){setBadge('storage-evt','AUTH KEY CHANGED','b-leak');setCard('storage-evt','warn');addLog('E-02 RISK -- Cross-tab storage change on auth-pattern key "'+e.key+'"','warn');}
+  else{setBadge('storage-evt','ACTIVITY','b-caution');addLog('E-02 -- Storage event on key "'+e.key+'"','caut');}
+});
+
+/* Summary */
+const pct=Math.min(100,Math.round(warnCount*10+cautionCount*4));
+const fill=$('risk-fill');
+fill.style.width=pct+'%';
+fill.style.background=warnCount>3?'var(--warn)':warnCount>0?'var(--caution)':'var(--ok)';
+const lvl=warnCount>3?'CRITICAL':warnCount>0?'ELEVATED':cautionCount>0?'LOW':'CLEAN';
+const lvlColor=warnCount>3?'var(--warn)':warnCount>0?'var(--caution)':cautionCount>0?'var(--caution)':'var(--ok)';
+$('sum-icon').textContent=warnCount>0?'\uD83D\uDD34':cautionCount>0?'\uD83D\uDFE1':'\uD83D\uDFE2';
+$('sum-text').textContent=warnCount+' high-risk finding(s), '+cautionCount+' caution(s) -- ATO risk level: '+lvl;
+$('sum-verdict').textContent=lvl;$('sum-verdict').style.color=lvlColor;
+$('risk-label').textContent=pct+'% risk score';$('risk-label').style.color=lvlColor;
+$('summary').style.borderColor=warnCount>0?'rgba(255,77,77,.4)':cautionCount>0?'rgba(255,170,0,.3)':'rgba(0,230,118,.25)';
+addLog('-- COMPLETE -- '+warnCount+' WARN, '+cautionCount+' CAUTION, risk score '+pct+'% --',warnCount>0?'warn':'ok');
 </script>
 </body>
 </html>
