@@ -1,2 +1,463 @@
-console.log(document.referrer);
-console.log(window.opener);
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Opener Leak Diagnostic</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow:wght@300;600&display=swap');
+
+    :root {
+      --bg: #0a0c10;
+      --panel: #0f1318;
+      --border: #1e2530;
+      --accent: #00e5ff;
+      --warn: #ff6b35;
+      --ok: #39ff14;
+      --muted: #4a5568;
+      --text: #cdd6f4;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Barlow', sans-serif;
+      font-weight: 300;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 20px;
+    }
+
+    /* Scanline overlay */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0,0,0,0.07) 2px,
+        rgba(0,0,0,0.07) 4px
+      );
+      pointer-events: none;
+      z-index: 100;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 36px;
+    }
+
+    header .label {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 11px;
+      letter-spacing: 4px;
+      color: var(--accent);
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    header h1 {
+      font-size: 28px;
+      font-weight: 600;
+      color: #fff;
+      letter-spacing: -0.5px;
+    }
+
+    header p {
+      margin-top: 8px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      width: 100%;
+      max-width: 820px;
+      margin-bottom: 20px;
+    }
+
+    @media (max-width: 600px) { .grid { grid-template-columns: 1fr; } }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+      background: var(--accent);
+      opacity: 0.5;
+    }
+
+    .card.warn::before { background: var(--warn); }
+    .card.ok::before   { background: var(--ok); }
+
+    .card-label {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 10px;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 12px;
+    }
+
+    .card-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--accent);
+      margin-bottom: 6px;
+      font-family: 'Share Tech Mono', monospace;
+    }
+
+    .card.warn .card-title { color: var(--warn); }
+    .card.ok .card-title   { color: var(--ok); }
+
+    .value {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 12px;
+      word-break: break-all;
+      color: #e2e8f0;
+      background: rgba(0,0,0,0.3);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 10px 12px;
+      min-height: 40px;
+      margin-top: 6px;
+    }
+
+    .badge {
+      display: inline-block;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 20px;
+      font-weight: 600;
+      letter-spacing: 1px;
+      margin-left: 8px;
+      vertical-align: middle;
+    }
+
+    .badge-leak  { background: rgba(255,107,53,0.2); color: var(--warn); border: 1px solid var(--warn); }
+    .badge-safe  { background: rgba(57,255,20,0.1);  color: var(--ok);   border: 1px solid var(--ok); }
+    .badge-info  { background: rgba(0,229,255,0.1);  color: var(--accent); border: 1px solid var(--accent); }
+
+    /* Full-width cards */
+    .card.full { grid-column: 1 / -1; }
+
+    /* Log console */
+    #log {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 11.5px;
+      line-height: 1.8;
+      background: rgba(0,0,0,0.4);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 12px;
+      max-height: 220px;
+      overflow-y: auto;
+      margin-top: 8px;
+    }
+
+    .log-line { color: var(--muted); }
+    .log-line .ts { color: #2d3748; margin-right: 8px; }
+    .log-line.info   .msg { color: var(--accent); }
+    .log-line.warn   .msg { color: var(--warn); }
+    .log-line.ok     .msg { color: var(--ok); }
+    .log-line.err    .msg { color: #fc8181; }
+
+    /* Summary bar */
+    #summary {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 14px 20px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--panel);
+      width: 100%;
+      max-width: 820px;
+      margin-bottom: 20px;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 12px;
+    }
+
+    #summary-icon { font-size: 20px; }
+    #summary-text { flex: 1; color: var(--text); }
+    #summary-verdict { font-weight: 600; }
+
+    /* postMessage listener section */
+    #pm-log {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 11px;
+      background: rgba(0,0,0,0.4);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 10px 12px;
+      max-height: 120px;
+      overflow-y: auto;
+      margin-top: 8px;
+      color: var(--muted);
+    }
+
+    footer {
+      font-size: 11px;
+      color: var(--muted);
+      font-family: 'Share Tech Mono', monospace;
+      letter-spacing: 1px;
+      margin-top: 10px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="label">Security Diagnostic</div>
+  <h1>Opener Leak Inspector</h1>
+  <p>Dumps all cross-document communication vectors from this window context</p>
+</header>
+
+<!-- Summary -->
+<div id="summary">
+  <span id="summary-icon">⏳</span>
+  <span id="summary-text">Running diagnostics…</span>
+  <span id="summary-verdict"></span>
+</div>
+
+<div class="grid">
+
+  <!-- document.referrer -->
+  <div class="card" id="card-referrer">
+    <div class="card-label">01 &mdash; Navigation leak</div>
+    <div class="card-title">document.referrer <span id="badge-referrer" class="badge badge-info">checking</span></div>
+    <div class="value" id="val-referrer">—</div>
+  </div>
+
+  <!-- window.opener -->
+  <div class="card" id="card-opener">
+    <div class="card-label">02 &mdash; Opener reference</div>
+    <div class="card-title">window.opener <span id="badge-opener" class="badge badge-info">checking</span></div>
+    <div class="value" id="val-opener">—</div>
+  </div>
+
+  <!-- window.parent -->
+  <div class="card" id="card-parent">
+    <div class="card-label">03 &mdash; Frame parent</div>
+    <div class="card-title">window.parent !== window <span id="badge-parent" class="badge badge-info">checking</span></div>
+    <div class="value" id="val-parent">—</div>
+  </div>
+
+  <!-- window.top -->
+  <div class="card" id="card-top">
+    <div class="card-label">04 &mdash; Frame top</div>
+    <div class="card-title">window.top !== window <span id="badge-top" class="badge badge-info">checking</span></div>
+    <div class="value" id="val-top">—</div>
+  </div>
+
+  <!-- opener property probe -->
+  <div class="card full" id="card-probe">
+    <div class="card-label">05 &mdash; Opener property probe (if opener exists)</div>
+    <div class="card-title">window.opener.location / origin / name <span id="badge-probe" class="badge badge-info">checking</span></div>
+    <div class="value" id="val-probe">—</div>
+  </div>
+
+  <!-- postMessage listener -->
+  <div class="card full" id="card-pm">
+    <div class="card-label">06 &mdash; Inbound postMessage listener</div>
+    <div class="card-title">window.addEventListener('message') <span id="badge-pm" class="badge badge-info">live</span></div>
+    <div id="pm-log">Waiting for inbound postMessage events…</div>
+  </div>
+
+  <!-- Full console log -->
+  <div class="card full">
+    <div class="card-label">07 &mdash; Diagnostic log</div>
+    <div class="card-title">console output</div>
+    <div id="log"></div>
+  </div>
+
+</div>
+
+<footer>opener-leak-diagnostic &mdash; all checks run client-side &mdash; no data transmitted</footer>
+
+<script>
+  /* ── Helpers ─────────────────────────────────────────── */
+  const $ = id => document.getElementById(id);
+
+  const ts = () => new Date().toISOString().split('T')[1].replace('Z','');
+
+  function addLog(msg, level = 'info') {
+    const line = document.createElement('div');
+    line.className = `log-line ${level}`;
+    line.innerHTML = `<span class="ts">[${ts()}]</span><span class="msg">${msg}</span>`;
+    $('log').appendChild(line);
+    $('log').scrollTop = $('log').scrollHeight;
+    // Mirror to real console
+    const fn = level === 'warn' ? 'warn' : level === 'err' ? 'error' : 'log';
+    console[fn](`[opener-diag] ${msg}`);
+  }
+
+  function setCard(cardId, status /* 'ok'|'warn'|'neutral' */) {
+    const card = $(`card-${cardId}`);
+    card.classList.remove('ok','warn');
+    if (status !== 'neutral') card.classList.add(status);
+  }
+
+  function setBadge(badgeId, label, cls) {
+    const b = $(badgeId);
+    b.textContent = label;
+    b.className = `badge ${cls}`;
+  }
+
+  /* ── 01 document.referrer ────────────────────────────── */
+  addLog('Probing document.referrer…');
+  const referrer = document.referrer;
+  $('val-referrer').textContent = referrer || '(empty string — no referrer)';
+
+  if (referrer) {
+    setBadge('badge-referrer', 'LEAKED', 'badge-leak');
+    setCard('referrer', 'warn');
+    addLog(`document.referrer = "${referrer}"`, 'warn');
+  } else {
+    setBadge('badge-referrer', 'SAFE', 'badge-safe');
+    setCard('referrer', 'ok');
+    addLog('document.referrer is empty — no referrer leak.', 'ok');
+  }
+
+  /* ── 02 window.opener ────────────────────────────────── */
+  addLog('Probing window.opener…');
+  const opener = window.opener;
+  $('val-opener').textContent = opener
+    ? '[object Window] — opener reference present'
+    : '(null — no opener)';
+
+  if (opener) {
+    setBadge('badge-opener', 'LEAKED', 'badge-leak');
+    setCard('opener', 'warn');
+    addLog('window.opener is NOT null — tab was opened via window.open() and retains a back-reference.', 'warn');
+  } else {
+    setBadge('badge-opener', 'SAFE', 'badge-safe');
+    setCard('opener', 'ok');
+    addLog('window.opener is null — no opener reference.', 'ok');
+  }
+
+  /* ── 03 window.parent ────────────────────────────────── */
+  addLog('Probing window.parent…');
+  const inFrame = window.parent !== window;
+  $('val-parent').textContent = inFrame
+    ? 'true — page is embedded inside an <iframe>'
+    : 'false — not inside an iframe';
+
+  if (inFrame) {
+    setBadge('badge-parent', 'FRAMED', 'badge-leak');
+    setCard('parent', 'warn');
+    addLog('window.parent !== window — this page is running inside a frame!', 'warn');
+  } else {
+    setBadge('badge-parent', 'SAFE', 'badge-safe');
+    setCard('parent', 'ok');
+    addLog('window.parent === window — not framed.', 'ok');
+  }
+
+  /* ── 04 window.top ───────────────────────────────────── */
+  addLog('Probing window.top…');
+  const notTop = window.top !== window;
+  $('val-top').textContent = notTop
+    ? 'true — not the top-level browsing context'
+    : 'false — this IS the top-level context';
+
+  if (notTop) {
+    setBadge('badge-top', 'NESTED', 'badge-leak');
+    setCard('top', 'warn');
+    addLog('window.top !== window — nested inside another window/frame.', 'warn');
+  } else {
+    setBadge('badge-top', 'SAFE', 'badge-safe');
+    setCard('top', 'ok');
+    addLog('window.top === window — top-level context confirmed.', 'ok');
+  }
+
+  /* ── 05 Opener property probe ────────────────────────── */
+  addLog('Attempting opener property probe…');
+  if (opener) {
+    const probeResults = [];
+    const props = {
+      'opener.location.href':   () => opener.location.href,
+      'opener.location.origin': () => opener.location.origin,
+      'opener.name':            () => opener.name,
+      'opener.document.title':  () => opener.document.title,
+    };
+
+    for (const [key, fn] of Object.entries(props)) {
+      try {
+        const v = fn();
+        probeResults.push(`${key} = ${v}`);
+        addLog(`${key} = "${v}"`, 'warn');
+      } catch(e) {
+        probeResults.push(`${key} → blocked by same-origin policy (${e.name})`);
+        addLog(`${key} → ${e.name} (cross-origin — blocked)`, 'ok');
+      }
+    }
+
+    $('val-probe').textContent = probeResults.join('\n');
+    setBadge('badge-probe', 'ran', 'badge-info');
+    setCard('probe', 'warn');
+  } else {
+    $('val-probe').textContent = 'Skipped — window.opener is null.';
+    setBadge('badge-probe', 'N/A', 'badge-safe');
+    setCard('probe', 'ok');
+    addLog('Opener probe skipped — no opener present.', 'info');
+  }
+
+  /* ── 06 postMessage listener ─────────────────────────── */
+  addLog('Installing postMessage listener…');
+  window.addEventListener('message', e => {
+    const entry = document.createElement('div');
+    const safe = str => str.replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    entry.innerHTML =
+      `<span style="color:var(--warn)">[${ts()}] ⚠ inbound message</span><br>` +
+      `  origin: <span style="color:var(--accent)">${safe(e.origin)}</span><br>` +
+      `  source: <span style="color:var(--accent)">${e.source === window.opener ? 'window.opener' : e.source === window.parent ? 'window.parent' : 'other'}</span><br>` +
+      `  data:   <span style="color:#e2e8f0">${safe(JSON.stringify(e.data))}</span>`;
+    $('pm-log').innerHTML = '';
+    $('pm-log').appendChild(entry);
+    addLog(`postMessage received from origin "${e.origin}" — data: ${JSON.stringify(e.data)}`, 'warn');
+  });
+
+  /* ── Summary ─────────────────────────────────────────── */
+  const leaks = [
+    referrer !== '',
+    opener !== null,
+    inFrame,
+    notTop,
+  ].filter(Boolean).length;
+
+  const icon    = leaks > 0 ? '⚠️' : '✅';
+  const text    = leaks > 0
+    ? `${leaks} cross-document vector${leaks>1?'s':''} detected. Review WARN entries above.`
+    : 'No opener / referrer / frame leaks detected in this context.';
+  const verdict = leaks > 0 ? 'REVIEW REQUIRED' : 'ALL CLEAR';
+  const vcolor  = leaks > 0 ? 'var(--warn)' : 'var(--ok)';
+
+  $('summary-icon').textContent = icon;
+  $('summary-text').textContent = text;
+  $('summary-verdict').textContent = verdict;
+  $('summary-verdict').style.color = vcolor;
+  $('summary').style.borderColor = leaks > 0 ? 'rgba(255,107,53,0.4)' : 'rgba(57,255,20,0.25)';
+
+  addLog(`Diagnostics complete — ${leaks} leak vector(s) found.`, leaks > 0 ? 'warn' : 'ok');
+</script>
+</body>
+</html>
