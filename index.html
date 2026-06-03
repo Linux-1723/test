@@ -1,26 +1,52 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Meta JS Bridge PoC</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Meta JS Bridge Dumper</title>
+    <style>body { font-family: monospace; word-wrap: break-word; }</style>
 </head>
 <body>
-    <h1>Testing JS Bridge Exposure</h1>
+    <h3>Hunting for JS Bridges...</h3>
+    <div id="output"></div>
+
     <script>
-        // Once the page loads, Meta's WebView will inject the bridge.
-        // It is usually exposed globally as the name of the extension.
+        function log(msg) {
+            document.getElementById('output').innerHTML += msg + "<br><br>";
+        }
+
         window.onload = function() {
-            if (window.bizapp_extension) {
-                alert("Boom! JS Bridge is exposed!");
-                // You can enumerate methods by iterating over the object:
-                let methods = Object.keys(window.bizapp_extension);
-                document.write("Exposed Methods: " + methods.join(", "));
+            setTimeout(() => {
+                let keys = Object.getOwnPropertyNames(window);
                 
-                // If you find a token method, you could do:
-                // window.bizapp_extension.getAccessToken(...);
-            } else {
-                alert("Bridge not found, checking alternative namespaces...");
-                // Sometimes it's under window._fbBatchedBridge or window.FacebookLite
-            }
+                // Look for anything injected that looks like a bridge
+                let suspiciousKeys = keys.filter(k => 
+                    k.toLowerCase().includes('biz') || 
+                    k.toLowerCase().includes('fb') || 
+                    k.toLowerCase().includes('facebook') || 
+                    k.toLowerCase().includes('extension') ||
+                    k.toLowerCase().includes('android') ||
+                    k === '_fbBatchedBridge' ||
+                    k === 'prompt' // Sometimes they override window.prompt for message passing
+                );
+                
+                if (suspiciousKeys.length > 0) {
+                    log("<b>🚨 FOUND POTENTIAL BRIDGES:</b><br>" + suspiciousKeys.join("<br>"));
+                    
+                    // Try to dump the methods of the first interesting one
+                    suspiciousKeys.forEach(key => {
+                        try {
+                            let obj = window[key];
+                            if (typeof obj === 'object') {
+                                log(`<b>Methods in ${key}:</b><br>` + Object.keys(obj).join(", "));
+                            }
+                        } catch(e) {}
+                    });
+
+                } else {
+                    log("No obvious bridges found. Dumping all window keys for manual inspection:");
+                    log(keys.join(", "));
+                }
+            }, 1000); // 1 second delay to ensure WebView finishes injection
         };
     </script>
 </body>
