@@ -4,7 +4,8 @@
     <h1>MojoJS Command Buffer Injector</h1>
     <script type="module">
         // Import the pre-compiled bindings you downloaded
-        import { GpuChannelHost } from './gpu_channel.mojom.js';
+        import * as gpuChannelModule from './gpu_channel.mojom.js';
+        console.log("LOGGING GPU CHANNEL MODULE:", gpuChannelModule);
         
         async function runExploit() {
             if (typeof Mojo === "undefined") {
