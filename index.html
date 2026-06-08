@@ -5,7 +5,7 @@
     <style>body { font-family: monospace; background: #111; color: #0f0; font-size: 18px; }</style>
 </head>
 <body>
-    <h2>Tint AST Teardown Crash</h2>
+    <h2>Tint AST Teardown Crash2</h2>
     <p>Click START. The page will spam the GPU and auto-refresh to trigger the SIGTRAP.</p>
     <button id="crashBtn" style="padding: 20px; background: red; color: white; cursor:pointer;">START ATTACK</button>
     <div id="status" style="margin-top: 20px;"></div>
@@ -55,7 +55,7 @@
                 clearInterval(spammer);
                 statusEl.innerText = "Triggering Teardown...";
                 window.location.reload(); 
-            }, 5000);
+            }, 10000);
         }
 
         document.getElementById('crashBtn').addEventListener('click', triggerCrash);
