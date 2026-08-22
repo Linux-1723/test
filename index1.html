@@ -31,10 +31,12 @@
       text-align: center;
       transition: transform 0.2s ease;
       border: 1px solid rgba(255,255,255,0.5);
+      animation: fadeIn 0.6s ease;
     }
 
-    .card:hover {
-      transform: translateY(-3px);
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
     }
 
     .icon {
@@ -58,28 +60,36 @@
       padding-bottom: 18px;
     }
 
-    .intent-link {
+    .status-box {
+      background: #f8faff;
+      border-radius: 16px;
+      padding: 20px;
+      margin: 20px 0 16px 0;
+      border: 1px solid #dce3ed;
+    }
+
+    .status-box .loading {
       display: inline-block;
-      background: #1a5c9e;
-      color: white;
-      font-weight: 600;
-      font-size: 1.2rem;
-      padding: 16px 44px;
-      border-radius: 60px;
-      text-decoration: none;
-      transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
-      box-shadow: 0 8px 20px rgba(26, 92, 158, 0.30);
-      letter-spacing: 0.4px;
+      width: 20px;
+      height: 20px;
+      border: 3px solid #e9edf4;
+      border-top: 3px solid #1a5c9e;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-right: 10px;
+      vertical-align: middle;
     }
 
-    .intent-link:hover {
-      background: #0f4780;
-      transform: scale(1.02);
-      box-shadow: 0 10px 28px rgba(26, 92, 158, 0.40);
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
     }
 
-    .intent-link:active {
-      transform: scale(0.96);
+    .status-text {
+      font-size: 1rem;
+      color: #1a2b3e;
+      font-weight: 500;
+      vertical-align: middle;
     }
 
     .badge-container {
@@ -125,7 +135,7 @@
     }
 
     .code-box .dim {
-      color: #6a7f9b;
+      color: #6a7f8a;
     }
 
     .footnote {
@@ -137,6 +147,24 @@
     .footnote strong {
       color: #1a5c9e;
     }
+
+    .manual-trigger {
+      margin-top: 16px;
+    }
+
+    .manual-trigger a {
+      color: #1a5c9e;
+      text-decoration: none;
+      font-weight: 500;
+      font-size: 0.9rem;
+      border-bottom: 1px dashed #b0c4db;
+      padding-bottom: 2px;
+      cursor: pointer;
+    }
+
+    .manual-trigger a:hover {
+      border-bottom: 1px solid #1a5c9e;
+    }
   </style>
 </head>
 <body>
@@ -144,10 +172,12 @@
 <div class="card">
   <div class="icon">🔐</div>
   <h2>Authorization Activity</h2>
-  <div class="sub">Launch OAuth2 authorization flow</div>
+  <div class="sub">Launching OAuth2 authorization flow...</div>
 
-  <!-- Clickable link that triggers the intent -->
-  <a href="#" class="intent-link" id="launchIntentBtn">🚀 Launch Authorization</a>
+  <div class="status-box">
+    <span class="loading"></span>
+    <span class="status-text" id="statusText">Triggering intent automatically...</span>
+  </div>
 
   <div class="badge-container">
     <span class="badge primary">com.microsoft.identity.common</span>
@@ -168,8 +198,12 @@
     <span>• cid: <span class="highlight">dummy_cid</span></span>
   </div>
 
+  <div class="manual-trigger">
+    <a id="manualTrigger">↻ Click here if intent didn't trigger automatically</a>
+  </div>
+
   <div class="footnote">
-    ⚡ This triggers the <strong>AuthorizationActivity</strong> via Android Intent<br />
+    ⚡ This page automatically triggers the <strong>AuthorizationActivity</strong> via Android Intent<br />
     (works only within the Microsoft Identity app context).
   </div>
 </div>
@@ -178,7 +212,8 @@
   (function() {
     'use strict';
 
-    const launchBtn = document.getElementById('launchIntentBtn');
+    const statusText = document.getElementById('statusText');
+    const manualTrigger = document.getElementById('manualTrigger');
 
     /**
      * Triggers an Android Intent targeting:
@@ -244,15 +279,61 @@
           intent_start_fragment_main_activity: 2131297154,
           intent_start_fragment_args_main_activity: fragmentArgs
         });
+
+        // Update status
+        statusText.textContent = '✅ Intent triggered successfully!';
+        const loadingSpinner = document.querySelector('.loading');
+        if (loadingSpinner) {
+          loadingSpinner.style.display = 'none';
+        }
+
+        return true;
       } catch (error) {
         console.error('❌ Error triggering intent:', error);
-        alert('Failed to trigger intent. See console for details.');
+        statusText.textContent = '❌ Failed to trigger intent. See console for details.';
+        const loadingSpinner = document.querySelector('.loading');
+        if (loadingSpinner) {
+          loadingSpinner.style.display = 'none';
+        }
+        return false;
       }
     }
 
-    // Attach click event
-    launchBtn.addEventListener('click', function(e) {
+    // --- AUTO-TRIGGER ON PAGE LOAD ---
+    // Wait for the page to fully load before triggering
+    window.addEventListener('load', function() {
+      // Small delay to ensure the page is fully rendered
+      setTimeout(function() {
+        triggerIntent();
+      }, 300);
+    });
+
+    // --- MANUAL TRIGGER (fallback if auto-trigger fails) ---
+    manualTrigger.addEventListener('click', function(e) {
       e.preventDefault();
+      // Reset status
+      statusText.textContent = '🔄 Retrying...';
+      const loadingSpinner = document.querySelector('.loading');
+      if (loadingSpinner) {
+        loadingSpinner.style.display = 'inline-block';
+      }
+      triggerIntent();
+    });
+
+    // Also allow clicking anywhere on the card as a manual trigger (except on links)
+    document.querySelector('.card').addEventListener('click', function(e) {
+      // Don't interfere with the manual trigger link click
+      if (e.target.closest('a')) return;
+      // Only trigger if it's not the initial auto-trigger (we want to avoid double-triggering)
+      // But we'll just let it be a manual fallback
+      if (statusText.textContent.includes('Triggering') || statusText.textContent.includes('Retrying')) {
+        return;
+      }
+      statusText.textContent = '🔄 Manual retry...';
+      const loadingSpinner = document.querySelector('.loading');
+      if (loadingSpinner) {
+        loadingSpinner.style.display = 'inline-block';
+      }
       triggerIntent();
     });
 
