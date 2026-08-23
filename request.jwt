@@ -1,0 +1,22 @@
+{
+  "client_id": "did:web:github.com",
+  "nonce": "random_nonce_123",
+  "claims": {
+    "vp_token": {
+      "presentation_definition": {
+        "input_descriptors": [
+          {
+            "id": "FaceCheck",
+            "schema": [{"uri": "FaceCheckCredential"}],
+            "constraints": {
+               "fields": [{"path": ["$.vc.credentialSubject."], "faceSDK": true}]
+            }
+          }
+        ],
+        "facecheck_session_token": {
+          "authToken": "lyr0QqYPTaODhT0F6u+DJQ"
+        }
+      }
+    }
+  }
+}
