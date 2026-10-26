@@ -2,9 +2,76 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>1337</title>
+    <title>1337 - URL Loader</title>
+    <style>
+        body {
+            background: black;
+            color: #00ff00;
+            font-family: monospace;
+            text-align: center;
+            padding-top: 80px;
+        }
+
+        h1 {
+            font-size: 120px;
+            margin: 0;
+            text-shadow: 0 0 20px #00ff00;
+        }
+
+        input, button {
+            background: black;
+            color: #00ff00;
+            border: 1px solid #00ff00;
+            padding: 12px;
+            font-family: monospace;
+            font-size: 16px;
+            margin: 5px;
+        }
+
+        button {
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #00ff00;
+            color: black;
+        }
+
+        #status {
+            margin-top: 30px;
+            font-size: 20px;
+        }
+    </style>
 </head>
 <body>
-    <h1 style="font-size: 100px;">1337</h1>
+
+    <h1>1337</h1>
+    <p>ARBITRARY URL LOADER</p>
+
+    <input id="url" type="text"
+           placeholder="https://example.com"
+           size="30">
+
+    <button onclick="loadURL()">LOAD URL</button>
+
+    <div id="status">SYSTEM READY...</div>
+
+    <script>
+        function loadURL() {
+            const url = document.getElementById("url").value.trim();
+            const status = document.getElementById("status");
+
+            if (!url) {
+                status.textContent = "> ERROR: NO URL ENTERED";
+                return;
+            }
+
+            status.textContent = "> URL LOAD SUCCESS";
+            status.style.textShadow = "0 0 10px #00ff00";
+
+            console.log("[1337] URL:", url);
+        }
+    </script>
+
 </body>
 </html>
