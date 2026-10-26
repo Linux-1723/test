@@ -1,99 +1,10 @@
 
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Android Intent Launcher</title>
-
-  <style>
-    * {
-      box-sizing: border-box;
-    }
-
-    body {
-      margin: 0;
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-family: Arial, sans-serif;
-      background: #f1f5f9;
-      color: #1e293b;
-    }
-
-    .container {
-      width: 90%;
-      max-width: 400px;
-      padding: 30px 24px;
-      text-align: center;
-      background: #ffffff;
-      border-radius: 16px;
-      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
-    }
-
-    h1 {
-      font-size: 24px;
-      margin-bottom: 12px;
-    }
-
-    p {
-      color: #64748b;
-      line-height: 1.6;
-      font-size: 14px;
-    }
-
-    button {
-      width: 100%;
-      margin-top: 20px;
-      padding: 14px;
-      border: none;
-      border-radius: 10px;
-      background: #2563eb;
-      color: white;
-      font-size: 16px;
-      font-weight: bold;
-      cursor: pointer;
-    }
-
-    button:hover {
-      background: #1d4ed8;
-    }
-
-    #status {
-      margin-top: 16px;
-      font-size: 13px;
-    }
-  </style>
+    <title>1337</title>
 </head>
-
 <body>
-  <main class="container">
-    <h1>Android Intent Launcher</h1>
-
-    <p>
-      Tap the button below to attempt to open the Android
-      device-management activity.
-    </p>
-
-    <button type="button" onclick="launchIntent()">
-      Open Android Activity
-    </button>
-
-    <p id="status" role="status">
-      Ready
-    </p>
-  </main>
-
-  <script>
-    function launchIntent() {
-      const status = document.getElementById("status");
-
-      status.textContent = "Attempting to open the activity...";
-
-      window.location.href =
-        "intent:#Intent;sel;component=com.google.android.apps.work.clouddpc/.base.managedprovisioning.provisioning.ResetDeviceActivity;end";
-    }
-  </script>
+    <h1 style="font-size: 100px;">1337</h1>
 </body>
 </html>
