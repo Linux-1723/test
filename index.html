@@ -2,76 +2,41 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>1337 - URL Loader</title>
+    <title>1337</title>
     <style>
         body {
-            background: black;
-            color: #00ff00;
+            background: #050505;
+            color: #00ff41;
             font-family: monospace;
             text-align: center;
-            padding-top: 80px;
+            padding-top: 100px;
         }
 
         h1 {
-            font-size: 120px;
+            font-size: 150px;
             margin: 0;
-            text-shadow: 0 0 20px #00ff00;
+            text-shadow: 0 0 25px #00ff41;
         }
 
-        input, button {
-            background: black;
-            color: #00ff00;
-            border: 1px solid #00ff00;
-            padding: 12px;
-            font-family: monospace;
-            font-size: 16px;
-            margin: 5px;
+        p {
+            font-size: 22px;
+            letter-spacing: 2px;
         }
 
-        button {
-            cursor: pointer;
-        }
-
-        button:hover {
-            background: #00ff00;
-            color: black;
-        }
-
-        #status {
-            margin-top: 30px;
-            font-size: 20px;
+        .glitch {
+            color: red;
+            text-shadow: 2px 0 lime, -2px 0 blue;
         }
     </style>
 </head>
 <body>
 
     <h1>1337</h1>
-    <p>ARBITRARY URL LOADER</p>
 
-    <input id="url" type="text"
-           placeholder="https://example.com"
-           size="30">
-
-    <button onclick="loadURL()">LOAD URL</button>
-
-    <div id="status">SYSTEM READY...</div>
-
-    <script>
-        function loadURL() {
-            const url = document.getElementById("url").value.trim();
-            const status = document.getElementById("status");
-
-            if (!url) {
-                status.textContent = "> ERROR: NO URL ENTERED";
-                return;
-            }
-
-            status.textContent = "> URL LOAD SUCCESS";
-            status.style.textShadow = "0 0 10px #00ff00";
-
-            console.log("[1337] URL:", url);
-        }
-    </script>
+    <p class="glitch">INTENT REDIRECTION: SUCCESS</p>
+    <p>CAN OPEN ANY URL 💀</p>
+    <p>Security said "no" — 1337 said "watch me."</p>
+    <p> [ ACCESS GRANTED ] </p>
 
 </body>
 </html>
